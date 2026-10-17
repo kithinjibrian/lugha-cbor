@@ -37,13 +37,23 @@ Read this at the start of every session before writing any code.
 
 ---
 
+### 4. Duplicate map keys found by sorting
+
+**Decision:** Duplicate keys are found by merge-sorting each map's keys by their preferred encoding: O(n log n), never quadratic (DECISION-003).
+
+**Why:** Lugha's `Map` hash is unkeyed and the package has no source of a secret seed, so a hash table can be attacked.
+
+**Rules out:** Hash-based duplicate detection.
+
+---
+
 ## CURRENT PROJECT STATE
 
 ### Fully Working
 - `lughac init --lib` skeleton; context system (session 1).
 
-### Not Started
-- PRP-001: the decoder and encoder.
+### Written, blocked
+- PRP-001: the decoder and encoder (`PRPs/prp-001-decode_encode.md`), waiting on lughac float bit casts (DECISION-002).
 
 ---
 
