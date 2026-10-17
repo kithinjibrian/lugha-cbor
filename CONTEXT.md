@@ -158,6 +158,16 @@ CONTEXT.md — this entry
 
 ---
 
+## SESSION 5 — 2026-10-17 — Release v0.1.0 — open
+
+Branch: main
+
+### WHAT WAS DONE
+
+- In progress.
+
+---
+
 ## NEXT SESSION START POINT
 
 Open session 4's successor (session 5) first. Remote: `origin` = github.com/kithinjibrian/lugha-cbor; push after each session's handoff. Possible next steps, for the owner to choose: tag v0.1.0 (ask first) so Rapidkoi can depend on it through git, or a new PRP.
