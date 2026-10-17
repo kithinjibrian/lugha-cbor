@@ -1,6 +1,6 @@
 # PRP-001 — Decode and encode CBOR
 
-**Status:** written, waiting for approval. DECISION-002 resolved by lughac m108 (session 3).
+**Status:** approved by the owner, session 3. DECISION-002 resolved by lughac m108.
 **Branch:** `prp-001-decode-encode`
 **Source:** the owner's brief, session 2 (2026-10-17); answers to the two gaps are DECISION-002 and DECISION-003.
 
@@ -37,15 +37,18 @@ src/lib.la        entry: re-exports the public API ({ * } from each module below
 src/value.la      Value, Entry, SimpleValue, the reading helpers, Value.int
 src/limits.la     Limits, Limits.default()
 src/error.la      DecodeError, Malformation
-src/head.la       reading one head (initial byte + argument) with bounds checks
+src/reader.la     Reader: one head (initial byte + argument), definite and indefinite
+                  byte/text strings (strict UTF-8), and the item/byte budget, all
+                  bounds-checked (*)
 src/decode.la     decode(): the iterative decoder (an explicit frame stack)
-src/strings.la    definite and indefinite byte/text strings, strict UTF-8
 src/keys.la       duplicate-key detection (DECISION-003)
 src/float.la      half/single/double <-> f64, on the integer bits (DECISION-002)
 src/encode.la     encode(): preferred serialisation, iterative
 test/…            one file per area, mirroring src/ (see TESTS TO WRITE)
 examples/round_trip.la   replaces examples/hello.la; .gitignore updated
 ```
+
+(*) Session 3, before any code: the PRP first split this into `head.la` and `strings.la`. An `impl` must be in its type's file (spec §4) and only externs take `mut` parameters (§3), so everything that advances the shared cursor is a `mut self` method of one `Reader`. Same behaviour, one file.
 
 - **RFC 8949 sections covered:** §3 (the encoding: major types 0–7, heads, additional information 0–27 and 31, reserved 28–30), §3.1 (major types; strict UTF-8 for text), §3.2 (indefinite lengths and the break code, decode only), §3.3 (floats and simple values), §3.4 (tags as number + content, no semantics), §4.1 (preferred serialisation, for the encoder), §5.3.1 (basic validity: UTF-8, duplicate keys), §5.4 (resource limits), §5.6 (duplicate keys), Appendix A (examples), Appendix F (not-well-formed inputs).
 - **Lugha spec sections relied on** (each checked in `lughac spec`, v17):
@@ -124,7 +127,7 @@ public struct Limits { max_depth: i64, max_items: i64, max_bytes: i64, max_strin
 
 - Exactly one data item that fills `bytes`. Anything after it is `Err(TrailingBytes)`. Empty input is `Err(Truncated)`.
 - **Iterative, never recursive:** an explicit stack of frames (array, map, tag), one per open container, so its length is the depth. Opening a container when the stack already holds `max_depth` frames is `Err(TooDeep)`, checked before the frame is pushed. Indefinite strings don't nest (chunks must be definite), so they need no frame.
-- Every head is read with bounds checks (`src/head.la`): a missing argument byte is `Err(Truncated)`. Additional information 28–30 is `Malformed(ReservedInfo)`. 31 on major 0, 1 or 6 is `Malformed(IndefiniteNotAllowed)`. A two-byte simple value below 32 (`f8 00`–`f8 1f`) is `Malformed(ReservedSimple)`.
+- Every head is read with bounds checks (`src/reader.la`): a missing argument byte is `Err(Truncated)`. Additional information 28–30 is `Malformed(ReservedInfo)`. 31 on major 0, 1 or 6 is `Malformed(IndefiniteNotAllowed)`. A two-byte simple value below 32 (`f8 00`–`f8 1f`) is `Malformed(ReservedSimple)`.
 - **Claimed lengths are checked against the bytes left before anything is allocated or looped over** (see SECURITY). A string's claimed length or an array's claimed count beyond the bytes left is `Err(Truncated)`. Then the limits apply.
 - Indefinite byte and text strings are decoded by concatenating their chunks. A chunk that isn't a definite string of the same major type is `Malformed(BadChunk)`. A missing break is `Err(Truncated)`.
 - Indefinite arrays and maps decode. A break where an item is expected in a definite container, a tag's content, a map's value position, or at the top level is `Malformed(UnexpectedBreak)`.
@@ -141,7 +144,7 @@ public struct Limits { max_depth: i64, max_items: i64, max_bytes: i64, max_strin
 - Iterative: a work stack of `Value`s, children pushed in reverse. So encoding never recurses, whatever the depth.
 - Never fails: every `Value` is encodable (see `SimpleValue`).
 
-**The entry** `src/lib.la`: module doc, `public import` with `{ * }` of `value`, `limits`, `error`, `decode` and `encode`. Nothing else is public. `head`, `strings`, `keys` and `float` are package-level.
+**The entry** `src/lib.la`: module doc, `public import` with `{ * }` of `value`, `limits`, `error`, `decode` and `encode`. Nothing else is public. `reader`, `keys` and `float` are package-level.
 
 **The example** `examples/round_trip.la` replaces `examples/hello.la`. It builds a small nested value (a map holding text, a negative int, a float, an array and a nested map), encodes it, prints the bytes in hex, decodes them, reads fields back with the helpers, and shows that a decode error prints. `.gitignore`'s `/examples/hello` and `/hello` become `/examples/round_trip` and `/round_trip`.
 
@@ -185,7 +188,7 @@ public enum Malformation {
 
 ## SECURITY CONSIDERATIONS
 
-- **Claimed lengths:** checked in `src/head.la` and `src/strings.la` before any loop or allocation. A string needs `len ≤ left`. A definite array needs `count ≤ left` (each item takes at least one byte). A map needs `count ≤ left / 2`. All comparisons are in `u64` against `left as u64` (`left ≥ 0`), so nothing is added to a claim and nothing overflows. Nothing is preallocated from a claim: elements are pushed as they are decoded.
+- **Claimed lengths:** checked in `src/reader.la` before any loop or allocation. A string needs `len ≤ left`. A definite array needs `count ≤ left` (each item takes at least one byte). A map needs `count ≤ left / 2`. All comparisons are in `u64` against `left as u64` (`left ≥ 0`), so nothing is added to a claim and nothing overflows. Nothing is preallocated from a claim: elements are pushed as they are decoded.
 - **Depth:** the frame stack's length, checked before each push. No recursion in decode, encode or key encoding, so a large `max_depth` can't overflow the stack. (lughac's own generated `==` and printing of `Value` do recurse, but a decoded value's depth is at most `max_depth`.)
 - **Items and bytes:** counters checked with `checked_add` against the limits, at each head and each early claim.
 - **Overflow in offsets:** the position only advances by amounts already checked to fit in the bytes left, so `pos + n ≤ bytes.len` always holds and never overflows `i64`.
