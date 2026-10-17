@@ -1,0 +1,81 @@
+/**
+ * Duplicate-key detection at scale (DECISION-003): maps of 10,000 keys,
+ * shaped to be the slow cases, decode within the suite's time limit. Run
+ * with `lughac test test/keys.la --timeout 2`.
+ *
+ * Depends on: cbor
+ */
+
+import cbor { DecodeError, Limits, decode };
+
+/** The head of a map with `n` entries (n < 65536). */
+fun map_head(n: i64): u8[] = [0xb9, (n >> 8) as u8, (n & 0xff) as u8];
+
+/** The bytes of a test input, built in place. */
+struct Builder {
+    bytes: u8[],
+}
+
+impl Builder {
+    /** Appends a text string of `prefix` bytes of `x`, then `i` as five digits. */
+    fun push_key(mut self, prefix: i64, i: i64) {
+        self.bytes.push(0x79);
+        let len = prefix + 5;
+        self.bytes.push((len >> 8) as u8);
+        self.bytes.push((len & 0xff) as u8);
+        for j in 0..prefix {
+            self.bytes.push(0x78);
+        }
+        let mut d = 10000;
+        while d > 0 {
+            self.bytes.push((48 + (i / d) % 10) as u8);
+            d /= 10;
+        }
+    }
+}
+
+/**
+ * A map of `n` keys, each `prefix` bytes of `x` then an index, in rising or
+ * falling order; with `duplicate_last`, the last key repeats the first.
+ */
+fun big_map(n: i64, prefix: i64, reverse: bool, duplicate_last: bool): u8[] {
+    let mut b = Builder { bytes: map_head(n) };
+    let first = if reverse { n - 1 } else { 0 };
+    for k in 0..n {
+        let i = if reverse { n - 1 - k } else { k };
+        let i = if duplicate_last && k == n - 1 { first } else { i };
+        b.push_key(prefix, i);
+        b.bytes.push(0x00);
+    }
+    b.bytes
+}
+
+/** Asserts that `bytes` decodes to a map of `n` entries. */
+fun is_map_of(bytes: u8[], n: i64) {
+    let Ok(Map(es)) = decode(bytes, Limits.default()) else {
+        panic("expected a map");
+    };
+    assert_eq(es.len, n);
+}
+
+@test
+fun ten_thousand_keys() {
+    is_map_of(big_map(10000, 0, false, false), 10000);
+}
+
+@test
+fun ten_thousand_keys_in_reverse_order() {
+    is_map_of(big_map(10000, 0, true, false), 10000);
+}
+
+@test
+fun ten_thousand_keys_sharing_a_long_prefix() {
+    // every comparison walks 200 equal bytes first
+    is_map_of(big_map(10000, 200, false, false), 10000);
+}
+
+@test
+fun a_duplicate_as_the_last_of_ten_thousand_keys() {
+    assert_eq(decode(big_map(10000, 0, false, true), Limits.default()), Err(DecodeError.DuplicateKey));
+    assert_eq(decode(big_map(10000, 200, true, true), Limits.default()), Err(DecodeError.DuplicateKey));
+}

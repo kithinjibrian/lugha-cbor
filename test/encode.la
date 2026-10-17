@@ -1,0 +1,139 @@
+/**
+ * `encode` in preferred serialisation: every Appendix A example whose
+ * encoding is preferred, the preferred forms of the others, and NaN
+ * payloads.
+ *
+ * Depends on: cbor, support
+ */
+
+import cbor { Value, SimpleValue, Limits, decode, encode };
+import support { hex, encodes, t, u, kv, fbits };
+
+@test
+fun integers() {
+    encodes(u(0), "00");
+    encodes(u(1), "01");
+    encodes(u(10), "0a");
+    encodes(u(23), "17");
+    encodes(u(24), "1818");
+    encodes(u(25), "1819");
+    encodes(u(100), "1864");
+    encodes(u(1000), "1903e8");
+    encodes(u(1000000), "1a000f4240");
+    encodes(u(1000000000000), "1b000000e8d4a51000");
+    encodes(u(18446744073709551615), "1bffffffffffffffff");
+    encodes(Value.Negative(18446744073709551615), "3bffffffffffffffff");
+    encodes(Value.int(-1), "20");
+    encodes(Value.int(-10), "29");
+    encodes(Value.int(-100), "3863");
+    encodes(Value.int(-1000), "3903e7");
+    encodes(Value.Tag(2, Value.Bytes(hex("010000000000000000"))), "c249010000000000000000");
+    encodes(Value.Tag(3, Value.Bytes(hex("010000000000000000"))), "c349010000000000000000");
+}
+
+@test
+fun head_boundaries() {
+    encodes(u(255), "18ff");
+    encodes(u(256), "190100");
+    encodes(u(65535), "19ffff");
+    encodes(u(65536), "1a00010000");
+    encodes(u(4294967295), "1affffffff");
+    encodes(u(4294967296), "1b0000000100000000");
+}
+
+@test
+fun floats() {
+    encodes(Value.Float(0.0), "f90000");
+    encodes(Value.Float(-0.0), "f98000");
+    encodes(Value.Float(1.0), "f93c00");
+    encodes(Value.Float(1.1), "fb3ff199999999999a");
+    encodes(Value.Float(1.5), "f93e00");
+    encodes(Value.Float(65504.0), "f97bff");
+    encodes(Value.Float(100000.0), "fa47c35000");
+    encodes(Value.Float(3.4028234663852886e38), "fa7f7fffff");
+    encodes(Value.Float(1.0e300), "fb7e37e43c8800759c");
+    encodes(Value.Float(5.960464477539063e-8), "f90001");
+    encodes(Value.Float(0.00006103515625), "f90400");
+    encodes(Value.Float(-4.0), "f9c400");
+    encodes(Value.Float(-4.1), "fbc010666666666666");
+}
+
+@test
+fun infinities_and_nan_in_their_preferred_form() {
+    encodes(fbits(0x7ff0000000000000), "f97c00");
+    encodes(fbits(0xfff0000000000000), "f9fc00");
+    encodes(fbits(0x7ff8000000000000), "f97e00");
+}
+
+@test
+fun nan_payloads_survive_decode_and_encode() {
+    for s of ["f97c01", "f9fe01", "fa7f800001", "faffc00123", "fb7ff0000000000001", "fbfff8000000000123"] {
+        assert_eq(encode(decode(hex(s), Limits.default()).unwrap()), hex(s));
+    }
+}
+
+@test
+fun simple_values() {
+    encodes(Value.Bool(false), "f4");
+    encodes(Value.Bool(true), "f5");
+    encodes(Value.Null, "f6");
+    encodes(Value.Undefined, "f7");
+    encodes(Value.Simple(SimpleValue.new(16).unwrap()), "f0");
+    encodes(Value.Simple(SimpleValue.new(0).unwrap()), "e0");
+    encodes(Value.Simple(SimpleValue.new(32).unwrap()), "f820");
+    encodes(Value.Simple(SimpleValue.new(255).unwrap()), "f8ff");
+}
+
+@test
+fun tags() {
+    encodes(Value.Tag(0, t("2013-03-21T20:04:00Z")), "c074323031332d30332d32315432303a30343a30305a");
+    encodes(Value.Tag(1, u(1363896240)), "c11a514b67b0");
+    encodes(Value.Tag(1, Value.Float(1363896240.5)), "c1fb41d452d9ec200000");
+    encodes(Value.Tag(23, Value.Bytes(hex("01020304"))), "d74401020304");
+    encodes(Value.Tag(24, Value.Bytes(hex("6449455446"))), "d818456449455446");
+    encodes(Value.Tag(32, t("http://www.example.com")), "d82076687474703a2f2f7777772e6578616d706c652e636f6d");
+    encodes(Value.Tag(u64.MAX, Value.Null), "dbfffffffffffffffff6");
+}
+
+@test
+fun strings() {
+    encodes(Value.Bytes([]), "40");
+    encodes(Value.Bytes(hex("01020304")), "4401020304");
+    encodes(t(""), "60");
+    encodes(t("a"), "6161");
+    encodes(t("IETF"), "6449455446");
+    encodes(t("\"\\"), "62225c");
+    encodes(t("ü"), "62c3bc");
+    encodes(t("水"), "63e6b0b4");
+    encodes(t("𐅑"), "64f0908591");
+    // indefinite on the way in, definite on the way out (DECISION-001)
+    encodes(Value.Bytes(hex("0102030405")), "450102030405");
+    encodes(t("streaming"), "6973747265616d696e67");
+}
+
+@test
+fun arrays_and_maps() {
+    let nested = Value.Array([u(1), Value.Array([u(2), u(3)]), Value.Array([u(4), u(5)])]);
+    encodes(Value.Array([]), "80");
+    encodes(Value.Array([u(1), u(2), u(3)]), "83010203");
+    encodes(nested, "8301820203820405");
+    let mut xs: Value[] = [];
+    for i in 1..26 {
+        xs.push(u(i as u64));
+    }
+    encodes(Value.Array(xs), "98190102030405060708090a0b0c0d0e0f101112131415161718181819");
+    encodes(Value.Map([]), "a0");
+    encodes(Value.Map([kv(u(1), u(2)), kv(u(3), u(4))]), "a201020304");
+    encodes(Value.Map([kv(t("a"), u(1)), kv(t("b"), Value.Array([u(2), u(3)]))]), "a26161016162820203");
+    encodes(Value.Array([t("a"), Value.Map([kv(t("b"), t("c"))])]), "826161a161626163");
+    encodes(
+        Value.Map([kv(t("a"), t("A")), kv(t("b"), t("B")), kv(t("c"), t("C")), kv(t("d"), t("D")), kv(t("e"), t("E"))]),
+        "a56161614161626142616361436164614461656145",
+    );
+}
+
+@test
+fun map_order_is_kept() {
+    encodes(Value.Map([kv(u(3), u(4)), kv(u(1), u(2))]), "a203040102");
+    encodes(Value.Map([kv(t("Fun"), Value.Bool(true)), kv(t("Amt"), Value.int(-2))]), "a26346756ef563416d7421");
+}

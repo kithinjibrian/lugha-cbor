@@ -1,0 +1,79 @@
+/**
+ * Helpers shared by the tests: hex input, short value builders, and
+ * assertions on decode results. Holds no tests itself.
+ *
+ * Depends on: cbor
+ * Used by: every test file
+ */
+
+import cbor { Value, Entry, DecodeError, Limits, decode, encode };
+
+/** The bytes written in `s` as hex digit pairs; spaces are skipped. */
+public fun hex(s: string): u8[] {
+    let mut out: u8[] = [];
+    let mut high = -1;
+    for c of s {
+        let d = if c >= 48 && c <= 57 {
+            (c - 48) as i64
+        } else if c >= 97 && c <= 102 {
+            (c - 87) as i64
+        } else if c >= 65 && c <= 70 {
+            (c - 55) as i64
+        } else {
+            -1
+        };
+        if d >= 0 {
+            if high < 0 {
+                high = d;
+            } else {
+                out.push((high * 16 + d) as u8);
+                high = -1;
+            }
+        }
+    }
+    out
+}
+
+/** Decodes the hex input with the default limits. */
+public fun dec(s: string): Result<Value, DecodeError> = decode(hex(s), Limits.default());
+
+/** Decodes the hex input with `limits`. */
+public fun dec_with(s: string, limits: Limits): Result<Value, DecodeError> = decode(hex(s), limits);
+
+/** A text value. */
+public fun t(s: string): Value = Value.Text(s);
+
+/** An unsigned value. */
+public fun u(n: u64): Value = Value.Unsigned(n);
+
+/** A map entry. */
+public fun kv(k: Value, v: Value): Entry = Entry { key: k, value: v };
+
+/** A float value from its double bits. */
+public fun fbits(b: u64): Value = Value.Float(f64.from_bits(b));
+
+/** The double bits of a decoded float, or panics on anything else. */
+public fun bits_of(r: Result<Value, DecodeError>): u64 {
+    let Ok(Float(x)) = r else {
+        panic("expected a float, got {r}");
+    };
+    x.to_bits()
+}
+
+/** Asserts that `s` decodes to `v`. */
+public fun decodes(s: string, v: Value) {
+    assert_eq(dec(s), Ok(v));
+}
+
+/** Asserts that `v` encodes to exactly the hex bytes `s`. */
+public fun encodes(v: Value, s: string) {
+    assert_eq(encode(v), hex(s));
+}
+
+/** Asserts that `s` fails to decode with `e`. */
+public fun fails(s: string, e: DecodeError) {
+    let r = dec(s);
+    if r != Err(e) {
+        panic("{s}: expected Err({e}), got {r}");
+    }
+}

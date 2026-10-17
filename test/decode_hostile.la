@@ -1,0 +1,102 @@
+/**
+ * Hostile inputs: huge claims in tiny inputs, invalid UTF-8, duplicate
+ * keys, trailing bytes and empty input.
+ *
+ * Depends on: cbor, support
+ */
+
+import cbor { Value, DecodeError, Limits, decode };
+import support { dec, decodes, fails, t, u, kv };
+
+@test
+fun huge_claimed_lengths_in_tiny_inputs() {
+    for s of [
+        "5b ffffffffffffffff", "7b ffffffffffffffff", "9b ffffffffffffffff", "bb ffffffffffffffff",
+        "5a ffffffff", "7a ffffffff", "9a ffffffff", "ba ffffffff", "5b 7fffffffffffffff 00",
+        "9b 7fffffffffffffff 00",
+    ] {
+        fails(s, DecodeError.Truncated);
+    }
+}
+
+@test
+fun a_map_claiming_two_to_the_63_entries() {
+    // 2^63 entries are 2^64 items: the check must not overflow
+    fails("bb 8000000000000000 00 00", DecodeError.Truncated);
+    fails("bb ffffffffffffffff 00 00", DecodeError.Truncated);
+}
+
+@test
+fun a_claim_exactly_at_the_bytes_left_is_read() {
+    decodes("83 00 00 00", Value.Array([u(0), u(0), u(0)]));
+    decodes("a1 00 00", Value.Map([kv(u(0), u(0))]));
+    fails("a2 00 00 00", DecodeError.Truncated);
+}
+
+@test
+fun invalid_utf8() {
+    // overlong, surrogate, above U+10FFFF, cut short, a stray continuation byte
+    for s of ["62 c080", "63 eda080", "64 f4908080", "61 c3", "61 80", "61 ff"] {
+        fails(s, DecodeError.InvalidUtf8);
+    }
+}
+
+@test
+fun utf8_may_not_span_chunks() {
+    // ü (c3 bc) split across two chunks: each chunk must be valid alone
+    fails("7f 61 c3 61 bc ff", DecodeError.InvalidUtf8);
+    decodes("7f 62 c3bc 61 61 ff", t("üa"));
+}
+
+@test
+fun invalid_utf8_inside_containers_and_keys() {
+    fails("81 61 ff", DecodeError.InvalidUtf8);
+    fails("a1 61 ff 00", DecodeError.InvalidUtf8);
+}
+
+@test
+fun duplicate_keys() {
+    fails("a2 01 00 01 00", DecodeError.DuplicateKey);
+    fails("a2 6161 00 6161 01", DecodeError.DuplicateKey);
+    fails("bf 01 00 01 00 ff", DecodeError.DuplicateKey);
+}
+
+@test
+fun duplicate_keys_in_other_encodings() {
+    // 0x01 and 0x18 0x01 are the same integer
+    fails("a2 01 00 18 01 00", DecodeError.DuplicateKey);
+    // a definite and an indefinite "a"
+    fails("a2 6161 00 7f 6161 ff 00", DecodeError.DuplicateKey);
+    // 1.5 as half and as double
+    fails("a2 f93e00 00 fb3ff8000000000000 00", DecodeError.DuplicateKey);
+    // equal nested keys
+    fails("a2 82 01 02 00 9f 01 02 ff 00", DecodeError.DuplicateKey);
+    fails("a2 a1 01 02 00 a1 01 02 00", DecodeError.DuplicateKey);
+}
+
+@test
+fun different_keys_are_not_duplicates() {
+    // 1 and -2, 1 and "1", 0.0 and -0.0, [1] and 1, 1 and 6(1)
+    for s of ["a2 01 00 21 00", "a2 01 00 6131 00", "a2 f90000 00 f98000 00", "a2 81 01 00 01 00", "a2 01 00 c6 01 00"] {
+        assert(dec(s).is_ok());
+    }
+}
+
+@test
+fun duplicates_in_a_nested_map() {
+    fails("81 a2 01 00 01 00", DecodeError.DuplicateKey);
+    fails("a1 00 a2 01 00 01 00", DecodeError.DuplicateKey);
+}
+
+@test
+fun trailing_bytes() {
+    fails("00 00", DecodeError.TrailingBytes);
+    fails("80 00", DecodeError.TrailingBytes);
+    fails("9f ff ff", DecodeError.TrailingBytes);
+}
+
+@test
+fun empty_input() {
+    let empty: u8[] = [];
+    assert_eq(decode(empty, Limits.default()), Err(DecodeError.Truncated));
+}

@@ -1,0 +1,145 @@
+/**
+ * Each `Limits` field enforced at its edge: exactly at the limit decodes,
+ * one over fails. Also the defaults, and a depth far past any stack.
+ *
+ * Depends on: cbor, support
+ */
+
+import cbor { DecodeError, Malformation, Limits, decode, encode };
+import support { dec_with };
+
+/** `s` written `n` times. */
+fun rep(s: string, n: i64): string {
+    let mut parts: string[] = [];
+    for i in 0..n {
+        parts.push(s);
+    }
+    parts.join("")
+}
+
+/** The default limits with `max_depth` replaced. */
+fun depth(n: i64): Limits = Limits { max_depth: n, ..Limits.default() };
+
+/** The default limits with `max_items` replaced. */
+fun items(n: i64): Limits = Limits { max_items: n, ..Limits.default() };
+
+@test
+fun defaults() {
+    let l = Limits.default();
+    assert_eq(l.max_depth, 128);
+    assert_eq(l.max_items, 1000000);
+    assert_eq(l.max_bytes, 67108864);
+    assert_eq(l.max_string, 16777216);
+}
+
+@test
+fun depth_zero_allows_only_scalars() {
+    assert(dec_with("00", depth(0)).is_ok());
+    assert(dec_with("6161", depth(0)).is_ok());
+    assert_eq(dec_with("80", depth(0)), Err(DecodeError.TooDeep));
+    assert_eq(dec_with("a0", depth(0)), Err(DecodeError.TooDeep));
+    assert_eq(dec_with("c1 00", depth(0)), Err(DecodeError.TooDeep));
+}
+
+@test
+fun depth_of_arrays() {
+    assert(dec_with(rep("81", 10) + "00", depth(10)).is_ok());
+    assert_eq(dec_with(rep("81", 11) + "00", depth(10)), Err(DecodeError.TooDeep));
+    assert(dec_with(rep("9f", 10) + "00" + rep("ff", 10), depth(10)).is_ok());
+    assert_eq(dec_with(rep("9f", 11) + "00" + rep("ff", 11), depth(10)), Err(DecodeError.TooDeep));
+}
+
+@test
+fun depth_of_maps_and_tags() {
+    // a1 00 opens a map whose value is the next item
+    assert(dec_with(rep("a1 00", 5) + "00", depth(5)).is_ok());
+    assert_eq(dec_with(rep("a1 00", 6) + "00", depth(5)), Err(DecodeError.TooDeep));
+    assert(dec_with(rep("c1", 5) + "00", depth(5)).is_ok());
+    assert_eq(dec_with(rep("c1", 6) + "00", depth(5)), Err(DecodeError.TooDeep));
+    assert(dec_with("81 a1 00 c1 00", depth(3)).is_ok());
+    assert_eq(dec_with("81 a1 00 c1 80", depth(3)), Err(DecodeError.TooDeep));
+}
+
+@test
+fun depth_is_checked_before_the_rest_is_read() {
+    // the eleventh array fails at its head, before the truncated tail
+    assert_eq(dec_with(rep("81", 11), depth(10)), Err(DecodeError.TooDeep));
+}
+
+@test
+fun a_hundred_thousand_nested_arrays_need_no_stack() {
+    let n = 100000;
+    let mut input: u8[] = [];
+    for i in 0..n {
+        input.push(0x81);
+    }
+    input.push(0x00);
+    let r = decode(input, depth(n));
+    let Ok(v) = r else {
+        panic("expected a value");
+    };
+    assert_eq(encode(v), input);
+    assert_eq(decode(input, depth(n - 1)), Err(DecodeError.TooDeep));
+}
+
+@test
+fun item_count_counts_every_item() {
+    // the array and its three elements
+    assert(dec_with("83 01 02 03", items(4)).is_ok());
+    assert_eq(dec_with("83 01 02 03", items(3)), Err(DecodeError.TooManyItems));
+    // the map, a key and a value
+    assert(dec_with("a1 01 02", items(3)).is_ok());
+    assert_eq(dec_with("a1 01 02", items(2)), Err(DecodeError.TooManyItems));
+    // the tag and its content
+    assert(dec_with("c1 00", items(2)).is_ok());
+    assert_eq(dec_with("c1 00", items(1)), Err(DecodeError.TooManyItems));
+    assert_eq(dec_with("00", items(0)), Err(DecodeError.TooManyItems));
+    // an indefinite array counts its elements as they come
+    assert(dec_with("9f 01 02 ff", items(3)).is_ok());
+    assert_eq(dec_with("9f 01 02 03 ff", items(3)), Err(DecodeError.TooManyItems));
+}
+
+@test
+fun item_count_rejects_a_claim_at_its_head() {
+    // the elements are reserved bytes: reading any would be Malformed
+    assert_eq(dec_with("84 1c 1c 1c 1c", items(4)), Err(DecodeError.TooManyItems));
+    assert_eq(dec_with("a2 1c 1c 1c 1c", items(4)), Err(DecodeError.TooManyItems));
+}
+
+@test
+fun one_string_length() {
+    let l = Limits { max_string: 3, ..Limits.default() };
+    assert(dec_with("43 010203", l).is_ok());
+    assert_eq(dec_with("44 01020304", l), Err(DecodeError.TooLarge));
+    assert(dec_with("63 616263", l).is_ok());
+    assert_eq(dec_with("64 61626364", l), Err(DecodeError.TooLarge));
+    // chunks add up
+    assert(dec_with("5f 42 0102 41 03 ff", l).is_ok());
+    assert_eq(dec_with("5f 42 0102 42 0304 ff", l), Err(DecodeError.TooLarge));
+    assert_eq(dec_with("7f 62 6162 62 6364 ff", l), Err(DecodeError.TooLarge));
+}
+
+@test
+fun total_string_bytes() {
+    let l = Limits { max_bytes: 4, ..Limits.default() };
+    assert(dec_with("82 43 010203 41 04", l).is_ok());
+    assert_eq(dec_with("82 43 010203 42 0405", l), Err(DecodeError.TooLarge));
+    assert_eq(dec_with("82 63 616263 62 6465", l), Err(DecodeError.TooLarge));
+}
+
+@test
+fun negative_limits_act_as_zero() {
+    let l = Limits { max_depth: -5, max_items: -1, max_bytes: -1, max_string: -1 };
+    assert_eq(dec_with("00", l), Err(DecodeError.TooManyItems));
+    let s = Limits { max_string: -1, ..Limits.default() };
+    assert(dec_with("40", s).is_ok());
+    assert_eq(dec_with("41 00", s), Err(DecodeError.TooLarge));
+}
+
+@test
+fun well_formedness_comes_before_limits() {
+    let tight = Limits { max_depth: 0, max_items: 0, max_bytes: 0, max_string: 0 };
+    assert_eq(dec_with("5b ffffffffffffffff", tight), Err(DecodeError.Truncated));
+    assert_eq(dec_with("9b ffffffffffffffff", tight), Err(DecodeError.Truncated));
+    assert_eq(dec_with("1c", tight), Err(DecodeError.Malformed(Malformation.ReservedInfo)));
+}

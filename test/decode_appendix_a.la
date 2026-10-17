@@ -1,0 +1,174 @@
+/**
+ * Every example of RFC 8949 Appendix A, decoded. Encoding is in encode.la.
+ *
+ * Depends on: cbor, support
+ */
+
+import cbor { Value, SimpleValue };
+import support { hex, dec, decodes, t, u, kv, fbits, bits_of };
+
+@test
+fun unsigned_integers() {
+    decodes("00", u(0));
+    decodes("01", u(1));
+    decodes("0a", u(10));
+    decodes("17", u(23));
+    decodes("1818", u(24));
+    decodes("1819", u(25));
+    decodes("1864", u(100));
+    decodes("1903e8", u(1000));
+    decodes("1a000f4240", u(1000000));
+    decodes("1b000000e8d4a51000", u(1000000000000));
+    decodes("1bffffffffffffffff", u(18446744073709551615));
+}
+
+@test
+fun negative_integers() {
+    // -2^64 is the most negative CBOR integer: -1 - (2^64 - 1)
+    decodes("3bffffffffffffffff", Value.Negative(18446744073709551615));
+    decodes("20", Value.int(-1));
+    decodes("29", Value.int(-10));
+    decodes("3863", Value.int(-100));
+    decodes("3903e7", Value.int(-1000));
+}
+
+@test
+fun bignums_stay_tags() {
+    decodes("c249010000000000000000", Value.Tag(2, Value.Bytes(hex("010000000000000000"))));
+    decodes("c349010000000000000000", Value.Tag(3, Value.Bytes(hex("010000000000000000"))));
+}
+
+@test
+fun floats() {
+    decodes("f90000", Value.Float(0.0));
+    assert_eq(bits_of(dec("f98000")), 0x8000000000000000);
+    decodes("f93c00", Value.Float(1.0));
+    decodes("fb3ff199999999999a", Value.Float(1.1));
+    decodes("f93e00", Value.Float(1.5));
+    decodes("f97bff", Value.Float(65504.0));
+    decodes("fa47c35000", Value.Float(100000.0));
+    decodes("fa7f7fffff", Value.Float(3.4028234663852886e38));
+    decodes("fb7e37e43c8800759c", Value.Float(1.0e300));
+    decodes("f90001", Value.Float(5.960464477539063e-8));
+    decodes("f90400", Value.Float(0.00006103515625));
+    decodes("f9c400", Value.Float(-4.0));
+    decodes("fbc010666666666666", Value.Float(-4.1));
+}
+
+@test
+fun infinities_and_nans_in_every_width() {
+    let inf: u64 = 0x7ff0000000000000;
+    let ninf: u64 = 0xfff0000000000000;
+    let nan: u64 = 0x7ff8000000000000;
+    decodes("f97c00", fbits(inf));
+    decodes("f9fc00", fbits(ninf));
+    decodes("fa7f800000", fbits(inf));
+    decodes("faff800000", fbits(ninf));
+    decodes("fb7ff0000000000000", fbits(inf));
+    decodes("fbfff0000000000000", fbits(ninf));
+    // NaN != NaN, so compare bits
+    assert_eq(bits_of(dec("f97e00")), nan);
+    assert_eq(bits_of(dec("fa7fc00000")), nan);
+    assert_eq(bits_of(dec("fb7ff8000000000000")), nan);
+}
+
+@test
+fun simple_values() {
+    decodes("f4", Value.Bool(false));
+    decodes("f5", Value.Bool(true));
+    decodes("f6", Value.Null);
+    decodes("f7", Value.Undefined);
+    decodes("f0", Value.Simple(SimpleValue.new(16).unwrap()));
+    decodes("f8ff", Value.Simple(SimpleValue.new(255).unwrap()));
+}
+
+@test
+fun tags() {
+    decodes("c074323031332d30332d32315432303a30343a30305a", Value.Tag(0, t("2013-03-21T20:04:00Z")));
+    decodes("c11a514b67b0", Value.Tag(1, u(1363896240)));
+    decodes("c1fb41d452d9ec200000", Value.Tag(1, Value.Float(1363896240.5)));
+    decodes("d74401020304", Value.Tag(23, Value.Bytes(hex("01020304"))));
+    decodes("d818456449455446", Value.Tag(24, Value.Bytes(hex("6449455446"))));
+    decodes(
+        "d82076687474703a2f2f7777772e6578616d706c652e636f6d",
+        Value.Tag(32, t("http://www.example.com")),
+    );
+}
+
+@test
+fun strings() {
+    decodes("40", Value.Bytes([]));
+    decodes("4401020304", Value.Bytes(hex("01020304")));
+    decodes("60", t(""));
+    decodes("6161", t("a"));
+    decodes("6449455446", t("IETF"));
+    decodes("62225c", t("\"\\"));
+    decodes("62c3bc", t("ü"));
+    decodes("63e6b0b4", t("水"));
+    decodes("64f0908591", t("𐅑"));
+}
+
+@test
+fun arrays() {
+    decodes("80", Value.Array([]));
+    decodes("83010203", Value.Array([u(1), u(2), u(3)]));
+    decodes(
+        "8301820203820405",
+        Value.Array([u(1), Value.Array([u(2), u(3)]), Value.Array([u(4), u(5)])]),
+    );
+    decodes("98190102030405060708090a0b0c0d0e0f101112131415161718181819", one_to_25());
+}
+
+@test
+fun maps() {
+    decodes("a0", Value.Map([]));
+    decodes("a201020304", Value.Map([kv(u(1), u(2)), kv(u(3), u(4))]));
+    decodes("a26161016162820203", Value.Map([kv(t("a"), u(1)), kv(t("b"), Value.Array([u(2), u(3)]))]));
+    decodes("826161a161626163", Value.Array([t("a"), Value.Map([kv(t("b"), t("c"))])]));
+    decodes(
+        "a56161614161626142616361436164614461656145",
+        Value.Map([
+            kv(t("a"), t("A")),
+            kv(t("b"), t("B")),
+            kv(t("c"), t("C")),
+            kv(t("d"), t("D")),
+            kv(t("e"), t("E")),
+        ]),
+    );
+}
+
+@test
+fun indefinite_strings() {
+    decodes("5f42010243030405ff", Value.Bytes(hex("0102030405")));
+    decodes("7f657374726561646d696e67ff", t("streaming"));
+}
+
+@test
+fun indefinite_arrays() {
+    let nested = Value.Array([u(1), Value.Array([u(2), u(3)]), Value.Array([u(4), u(5)])]);
+    decodes("9fff", Value.Array([]));
+    decodes("9f018202039f0405ffff", nested);
+    decodes("9f01820203820405ff", nested);
+    decodes("83018202039f0405ff", nested);
+    decodes("83019f0203ff820405", nested);
+    decodes("9f0102030405060708090a0b0c0d0e0f101112131415161718181819ff", one_to_25());
+}
+
+@test
+fun indefinite_maps() {
+    decodes(
+        "bf61610161629f0203ffff",
+        Value.Map([kv(t("a"), u(1)), kv(t("b"), Value.Array([u(2), u(3)]))]),
+    );
+    decodes("826161bf61626163ff", Value.Array([t("a"), Value.Map([kv(t("b"), t("c"))])]));
+    decodes("bf6346756ef563416d7421ff", Value.Map([kv(t("Fun"), Value.Bool(true)), kv(t("Amt"), Value.int(-2))]));
+}
+
+/** The array [1, 2, …, 25]. */
+fun one_to_25(): Value {
+    let mut xs: Value[] = [];
+    for i in 1..26 {
+        xs.push(u(i as u64));
+    }
+    Value.Array(xs)
+}

@@ -1,0 +1,112 @@
+/**
+ * Half, single and double bits to and from f64 (DECISION-002): edges,
+ * subnormals, ±0, ±inf, NaN payloads and the shortest-width choice.
+ *
+ * Depends on: cbor.float
+ */
+
+import cbor.float;
+
+/** The double bits of the half `h`. */
+fun h2d(h: u64): u64 = float.from_half(h).to_bits();
+
+/** The double bits of the single `s`. */
+fun s2d(s: u64): u64 = float.from_single(s).to_bits();
+
+/** The width (25 half, 26 single, 27 double) and bits `x` encodes as. */
+fun short(bits: u64): (u8, u64) = float.shortest(f64.from_bits(bits));
+
+@test
+fun half_edges() {
+    assert_eq(h2d(0x0000), 0x0000000000000000);
+    assert_eq(h2d(0x8000), 0x8000000000000000);
+    assert_eq(h2d(0x3c00), 1.0.to_bits());
+    assert_eq(h2d(0x7bff), 65504.0.to_bits());
+    // the smallest subnormal, 2^-24, and the largest, (1023/1024) * 2^-14
+    assert_eq(h2d(0x0001), 5.960464477539063e-8.to_bits());
+    assert_eq(h2d(0x03ff), 0.00006097555160522461.to_bits());
+    assert_eq(h2d(0x8001), (-5.960464477539063e-8).to_bits());
+    // the smallest normal, 2^-14
+    assert_eq(h2d(0x0400), 0.00006103515625.to_bits());
+}
+
+@test
+fun half_infinities_and_nans() {
+    assert_eq(h2d(0x7c00), 0x7ff0000000000000);
+    assert_eq(h2d(0xfc00), 0xfff0000000000000);
+    assert_eq(h2d(0x7e00), 0x7ff8000000000000);
+    // a signalling NaN with payload 1 keeps it, shifted into place
+    assert_eq(h2d(0x7c01), 0x7ff0040000000000);
+    assert_eq(h2d(0xfe01), 0xfff8040000000000);
+}
+
+@test
+fun single_edges() {
+    assert_eq(s2d(0x00000000), 0);
+    assert_eq(s2d(0x80000000), 0x8000000000000000);
+    assert_eq(s2d(0x47c35000), 100000.0.to_bits());
+    assert_eq(s2d(0x7f7fffff), 3.4028234663852886e38.to_bits());
+    // the smallest subnormal, 2^-149
+    assert_eq(s2d(0x00000001), 0x36a0000000000000);
+    // the largest subnormal, (2^23 - 1) * 2^-149
+    assert_eq(s2d(0x007fffff), 0x380fffffc0000000);
+    assert_eq(s2d(0x00800000), 0x3810000000000000);
+}
+
+@test
+fun single_infinities_and_nans() {
+    assert_eq(s2d(0x7f800000), 0x7ff0000000000000);
+    assert_eq(s2d(0xff800000), 0xfff0000000000000);
+    assert_eq(s2d(0x7fc00000), 0x7ff8000000000000);
+    // a signalling NaN stays signalling, its payload shifted into place
+    assert_eq(s2d(0x7f800001), 0x7ff0000020000000);
+}
+
+@test
+fun double_is_exact() {
+    for b of [0x7ff0000000000001, 0xfff8000000000123, 0x0000000000000001, 0x8000000000000000] {
+        assert_eq(float.from_double(b).to_bits(), b);
+    }
+}
+
+@test
+fun shortest_width() {
+    assert_eq(short(1.5.to_bits()), (25, 0x3e00));
+    assert_eq(short(65504.0.to_bits()), (25, 0x7bff));
+    assert_eq(short(65505.0.to_bits()), (26, 0x477fe100));
+    assert_eq(short(100000.0.to_bits()), (26, 0x47c35000));
+    assert_eq(short(1.1.to_bits()), (27, 1.1.to_bits()));
+    assert_eq(short(0.0.to_bits()), (25, 0x0000));
+    assert_eq(short(0x8000000000000000), (25, 0x8000));
+    assert_eq(short(5.960464477539063e-8.to_bits()), (25, 0x0001));
+    assert_eq(short(0.00006097555160522461.to_bits()), (25, 0x03ff));
+    // 2^-25 is below every half: a single
+    assert_eq(short(0x3e60000000000000), (26, 0x33000000));
+    // 2^-149, the smallest single subnormal; 2^-150 needs a double
+    assert_eq(short(0x36a0000000000000), (26, 0x00000001));
+    assert_eq(short(0x3690000000000000), (27, 0x3690000000000000));
+    // 1.5 * 2^-25 is no multiple of 2^-24, the last half bit: a single
+    assert_eq(short(0x3e68000000000000), (26, 0x33400000));
+    // a double subnormal
+    assert_eq(short(1), (27, 1));
+    assert_eq(short(1.0e300.to_bits()), (27, 1.0e300.to_bits()));
+}
+
+@test
+fun shortest_infinities_and_nans() {
+    assert_eq(short(0x7ff0000000000000), (25, 0x7c00));
+    assert_eq(short(0xfff0000000000000), (25, 0xfc00));
+    assert_eq(short(0x7ff8000000000000), (25, 0x7e00));
+    // payloads go only where they fit whole
+    assert_eq(short(0x7ff0040000000000), (25, 0x7c01));
+    assert_eq(short(0x7ff0000020000000), (26, 0x7f800001));
+    assert_eq(short(0x7ff0000000000001), (27, 0x7ff0000000000001));
+}
+
+@test
+fun every_half_round_trips() {
+    for h in 0..65536 {
+        let (info, bits) = float.shortest(float.from_half(h as u64));
+        assert_eq((info, bits), (25, h as u64));
+    }
+}
