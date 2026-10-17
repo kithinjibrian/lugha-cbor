@@ -82,6 +82,16 @@ CONTEXT.md                      — this entry
 
 ---
 
+## SESSION 3 — 2026-10-17 — PRP-001: resolve DECISION-002 and build — open
+
+Branch: prp-001-decode-encode
+
+### WHAT WAS DONE
+
+- In progress.
+
+---
+
 ## NEXT SESSION START POINT
 
 Open session 3 first, on `prp-001-decode-encode`. Check whether the installed lughac documents float bit casts (`lughac spec | grep -i bits`). If yes: resolve DECISION-002, update PRP-001's "Lugha spec sections relied on" with their real names, get the owner's approval of PRP-001 if not yet given, then build it test-first. If no: PRP-001 stays blocked; ask the owner what to do next.
