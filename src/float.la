@@ -1,0 +1,125 @@
+/**
+ * Half, single and double floats (IEEE 754 binary16/32/64) to and from
+ * `f64`, on their integer bits (DECISION-002): never through `as f32` or
+ * `as f64`, which would quiet a signalling NaN. NaN payloads and -0.0 are
+ * kept exactly. Not responsible for heads or bytes.
+ *
+ * Used by: reader, encoder
+ */
+
+/** The 52 fraction bits of a double. */
+fun fraction_mask(): u64 = 0x000f_ffff_ffff_ffff;
+
+/** The exponent field of every double infinity and NaN. */
+fun double_max_exponent(): u64 = 0x7ff;
+
+/**
+ * Returns the double bits of a narrower binary float with `ebits` exponent
+ * bits and `fbits` fraction bits, held in the low bits of `bits`.
+ */
+fun widen(bits: u64, ebits: u64, fbits: u64): u64 {
+    let sign = bits >> ebits + fbits & 1;
+    let exp = bits >> fbits & (1 << ebits) - 1;
+    let frac = bits & (1 << fbits) - 1;
+    let bias = (1 << ebits - 1) - 1;
+    let shift = 52 - fbits;
+    let top = sign << 63;
+    if exp == (1 << ebits) - 1 {
+        // infinity or NaN: the payload moves up whole, so a NaN stays a NaN of the same kind
+        return top | double_max_exponent() << 52 | frac << shift;
+    }
+    if exp == 0 {
+        if frac == 0 {
+            return top;
+        }
+        // a subnormal is frac * 2^(1 - bias - fbits); as a double it is normal:
+        // the highest set bit p becomes the implicit 1, the bits below it the fraction
+        let p = 63 - frac.leading_zeros() as u64;
+        let e = 1023 + p + 1 - bias - fbits;
+        return top | e << 52 | frac << 52 - p & fraction_mask();
+    }
+    top | exp + 1023 - bias << 52 | frac << shift
+}
+
+/**
+ * Returns the `f64` a half-precision float's bits stand for.
+ *
+ * @param bits the 16 bits, in the low bits
+ */
+fun from_half(bits: u64): f64 = f64.from_bits(widen(bits, 5, 10));
+
+/**
+ * Returns the `f64` a single-precision float's bits stand for.
+ *
+ * @param bits the 32 bits, in the low bits
+ */
+fun from_single(bits: u64): f64 = f64.from_bits(widen(bits, 8, 23));
+
+/** Returns the `f64` a double's bits stand for. */
+fun from_double(bits: u64): f64 = f64.from_bits(bits);
+
+/**
+ * Returns the double bits `d` narrowed to a float with `ebits` exponent and
+ * `fbits` fraction bits, or `None` when that width can't hold the value (or
+ * its NaN payload) exactly.
+ */
+fun narrow(d: u64, ebits: u64, fbits: u64): Option<u64> {
+    let sign = d >> 63;
+    let exp = d >> 52 & double_max_exponent();
+    let frac = d & fraction_mask();
+    let drop = 52 - fbits;
+    let low = (1 << drop) - 1;
+    let max_exp = (1 << ebits) - 1;
+    let top = sign << ebits + fbits;
+    if exp == double_max_exponent() {
+        // infinity or NaN: only when the payload loses no bits
+        if frac & low != 0 {
+            return None;
+        }
+        return Some(top | max_exp << fbits | frac >> drop);
+    }
+    if exp == 0 {
+        // zero fits everywhere; a double subnormal is below every narrower float
+        return if frac == 0 { Some(top) } else { None };
+    }
+    let bias = (1 << ebits - 1) - 1;
+    // the narrow exponent field would be exp - 1023 + bias; every comparison
+    // below adds 1023 to both sides so nothing goes below zero in u64
+    let e = exp;
+    if e + bias >= 1023 + max_exp {
+        return None;
+    }
+    if e + bias > 1023 {
+        // normal in the narrow width
+        if frac & low != 0 {
+            return None;
+        }
+        return Some(top | e + bias - 1023 << fbits | frac >> drop);
+    }
+    // subnormal in the narrow width: value = m * 2^(1 - bias - fbits), so the
+    // full significand (with its implicit 1) shifts right by `s` bits
+    let full = frac | 1 << 52;
+    let s = drop + 1023 + 1 - bias - e;
+    if s > 53 {
+        return None;
+    }
+    if full & (1 << s) - 1 != 0 {
+        return None;
+    }
+    Some(top | full >> s)
+}
+
+/**
+ * Returns the shortest of half, single and double that holds `x` exactly
+ * (RFC 8949 §4.1), as its additional information (25, 26 or 27) and bits.
+ */
+fun shortest(x: f64): (u8, u64) {
+    let d = x.to_bits();
+    if let Some(h) = narrow(d, 5, 10) {
+        return (25, h);
+    }
+    if let Some(s) = narrow(d, 8, 23) {
+        return (26, s);
+    }
+    (27, d)
+}

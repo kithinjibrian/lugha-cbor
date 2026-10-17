@@ -1,0 +1,40 @@
+/**
+ * The limits `decode` enforces on untrusted input (RFC 8949 §5.4). Only
+ * the numbers: `reader` and `decode` enforce them.
+ *
+ * Used by: reader, decoder, lib
+ */
+
+/**
+ * The most `decode` accepts. Start from `Limits.default()` and change what
+ * you need: `Limits { max_depth: 64, ..Limits.default() }`. A negative
+ * field acts as 0.
+ */
+public struct Limits {
+    /** The most arrays, maps and tags open inside each other: `1` is depth 0, `[1]` depth 1. */
+    public max_depth: i64,
+    /** The most data items in total, counting every key, value, element and tag content. */
+    public max_items: i64,
+    /** The most bytes of all byte and text strings together. */
+    public max_bytes: i64,
+    /** The most bytes of one string, its chunks joined. */
+    public max_string: i64,
+}
+
+impl Limits {
+    /**
+     * Returns limits that suit most programs: depth 128, a million items,
+     * 64 MiB of strings in all and 16 MiB in one.
+     *
+     * @returns the default limits
+     *
+     * Example:
+     *     decode(bytes, Limits.default())
+     */
+    public fun default(): Limits = Limits {
+        max_depth: 128,
+        max_items: 1_000_000,
+        max_bytes: 64 * 1024 * 1024,
+        max_string: 16 * 1024 * 1024,
+    };
+}

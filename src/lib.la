@@ -1,7 +1,14 @@
 /**
- * cbor: a Lugha library. This is its entry, `import cbor;`;
- * its other modules live beside it in `src/`.
+ * cbor: CBOR (RFC 8949) for Lugha. `decode` turns untrusted bytes into a
+ * `Value` or a typed `DecodeError`, within `Limits`; `encode` writes a
+ * `Value` in preferred serialisation. This is the entry, `import cbor;`;
+ * it only re-exports the public items of the modules beside it.
+ *
+ * Depends on: value, limits, error, decoder, encoder
  */
 
-// Returns a greeting from this library.
-public fun greet(who: string): string = "Hello, {who}, from cbor!";
+public import value { * };
+public import limits { * };
+public import error { * };
+public import decoder { * };
+public import encoder { * };

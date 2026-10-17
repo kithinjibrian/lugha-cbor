@@ -1,0 +1,226 @@
+/**
+ * The CBOR data model (RFC 8949 §2) as one Lugha type, `Value`, with small
+ * helpers for reading decoded data. Each data item has exactly one
+ * representation, so `==` is data-item equality, except that NaN is never
+ * equal to itself. Not responsible for bytes: `decode` and `encode` are.
+ *
+ * Used by: reader, decoder, encoder, keys, lib
+ */
+
+/** One CBOR data item. */
+public enum Value {
+    /** Major type 0: an integer from 0 to 2^64 - 1. */
+    Unsigned(u64),
+    /** Major type 1: the integer -1 - n, so from -1 to -2^64. `Value.int` builds one from an `i64`. */
+    Negative(u64),
+    /** Major type 2: a byte string. */
+    Bytes(u8[]),
+    /** Major type 3: a text string, always valid UTF-8. */
+    Text(string),
+    /** Major type 4: an array. */
+    Array(Self[]),
+    /** Major type 5: a map, its entries in the order received or given. */
+    Map(Entry[]),
+    /** Major type 6: a tag number and its content, with no meaning given to either. */
+    Tag(u64, Self),
+    /** The simple values 20 (false) and 21 (true). */
+    Bool(bool),
+    /** The simple value 22. */
+    Null,
+    /** The simple value 23. */
+    Undefined,
+    /** Any other simple value: 0 to 19, or 32 to 255. */
+    Simple(SimpleValue),
+    /** A half, single or double float, held as the `f64` of the same value. */
+    Float(f64),
+}
+
+/** One key and value of a `Value.Map`. */
+public struct Entry {
+    /** The key: any value. */
+    public key: Value,
+    /** The value. */
+    public value: Value,
+}
+
+/**
+ * A simple value other than false, true, null and undefined: 0 to 19 or
+ * 32 to 255. Built only by `SimpleValue.new`, so every one can be encoded.
+ */
+public struct SimpleValue {
+    private n: u8,
+}
+
+impl SimpleValue {
+    /**
+     * Makes a simple value, unless `n` has its own variant (20 to 23) or is
+     * reserved (24 to 31, RFC 8949 §3.3).
+     *
+     * @param n the simple value's number
+     * @returns the simple value, or `None` for 20 to 31
+     *
+     * Example:
+     *     Value.Simple(SimpleValue.new(16).unwrap())
+     */
+    public fun new(n: u8): Option<SimpleValue> = if n >= 20 && n < 32 {
+        None
+    } else {
+        Some(SimpleValue { n: n })
+    };
+
+    /**
+     * Returns the simple value's number.
+     *
+     * @returns 0 to 19 or 32 to 255
+     *
+     * Example:
+     *     s.number()
+     */
+    public fun number(self): u8 = self.n;
+}
+
+impl Value {
+    /**
+     * Builds the integer `n` as `Unsigned` or `Negative`.
+     *
+     * @returns `Unsigned(n)` for `n >= 0`, else `Negative(-1 - n)`
+     *
+     * Example:
+     *     Value.int(-3)
+     */
+    public fun int(n: i64): Value = if n >= 0 {
+        Value.Unsigned(n as u64)
+    } else {
+        // -1 - n can't overflow for a negative n: at i64.MIN it is i64.MAX
+        Value.Negative((-1 - n) as u64)
+    };
+
+    /**
+     * Looks up a text key in a map. Linear in the map's entries; keys are
+     * unique in a decoded map, so the first match is the only one.
+     *
+     * @param key the text of the key
+     * @returns the entry's value, or `None` when this isn't a map or has no such key
+     *
+     * Example:
+     *     node.get("props")?.get("text")?.as_text()
+     */
+    public fun get(self, key: string): Option<Value> {
+        if let Map(entries) = self {
+            for e of entries {
+                if let Text(k) = e.key {
+                    if k == key {
+                        return Some(e.value);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /**
+     * Returns the text of a `Text`.
+     *
+     * @returns the text, or `None` for any other variant
+     *
+     * Example:
+     *     v.as_text()
+     */
+    public fun as_text(self): Option<string> = match self {
+        Text(s) => Some(s),
+        _ => None,
+    };
+
+    /**
+     * Returns the bytes of a `Bytes`.
+     *
+     * @returns the bytes, or `None` for any other variant
+     *
+     * Example:
+     *     v.as_bytes()
+     */
+    public fun as_bytes(self): Option<u8[]> = match self {
+        Bytes(b) => Some(b),
+        _ => None,
+    };
+
+    /**
+     * Returns the value of a `Bool`.
+     *
+     * @returns the boolean, or `None` for any other variant
+     *
+     * Example:
+     *     v.as_bool()
+     */
+    public fun as_bool(self): Option<bool> = match self {
+        Bool(b) => Some(b),
+        _ => None,
+    };
+
+    /**
+     * Returns an integer that fits in an `i64`.
+     *
+     * @returns the integer, or `None` for a non-integer or one outside `i64`
+     *
+     * Example:
+     *     v.as_i64()
+     */
+    public fun as_i64(self): Option<i64> = match self {
+        Unsigned(n) if n <= i64.MAX as u64 => Some(n as i64),
+        // -1 - n fits exactly when n <= i64.MAX
+        Negative(n) if n <= i64.MAX as u64 => Some(-1 - n as i64),
+        _ => None,
+    };
+
+    /**
+     * Returns the value of an `Unsigned`.
+     *
+     * @returns the integer, or `None` for any other variant, negatives included
+     *
+     * Example:
+     *     v.as_u64()
+     */
+    public fun as_u64(self): Option<u64> = match self {
+        Unsigned(n) => Some(n),
+        _ => None,
+    };
+
+    /**
+     * Returns the value of a `Float`.
+     *
+     * @returns the float, or `None` for any other variant, integers included
+     *
+     * Example:
+     *     v.as_f64()
+     */
+    public fun as_f64(self): Option<f64> = match self {
+        Float(x) => Some(x),
+        _ => None,
+    };
+
+    /**
+     * Returns the elements of an `Array`.
+     *
+     * @returns the elements, or `None` for any other variant
+     *
+     * Example:
+     *     v.as_array()
+     */
+    public fun as_array(self): Option<Value[]> = match self {
+        Array(xs) => Some(xs),
+        _ => None,
+    };
+
+    /**
+     * Returns the entries of a `Map`, in order.
+     *
+     * @returns the entries, or `None` for any other variant
+     *
+     * Example:
+     *     v.as_map()
+     */
+    public fun as_map(self): Option<Entry[]> = match self {
+        Map(es) => Some(es),
+        _ => None,
+    };
+}

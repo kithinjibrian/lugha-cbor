@@ -113,8 +113,8 @@ Keep this list, `.llmignore` and `.claude/settings.json` in sync.
 ## COMMANDS
 
 ```bash
-lughac check examples/hello.la
-lughac build examples/hello.la
+lughac check examples/round_trip.la
+lughac build examples/round_trip.la
 lughac test test/                   # every @test
 lughac fmt --check src examples test
 lughac spec                         # the Lugha reference: check it before assuming a feature exists
@@ -136,7 +136,14 @@ A task is done only when `fmt --check` is clean, `lughac test test/` passes and 
 
 ## ARCHITECTURE RULES
 
-To be settled by PRP-001 (the `Value` type, `Limits`, and the decode/encode API).
+Settled by PRP-001 (`PRPs/prp-001-decode_encode.md`):
+
+- `Value` has one representation per data item; `Negative(n)` is -1 - n. `SimpleValue` excludes 20–31, so `encode` never fails.
+- `decode(bytes, Limits)` is iterative: an explicit frame stack in `decoder.la`, its height checked against `max_depth` before every push. **No recursion anywhere in the package.**
+- Everything that reads input goes through `Reader` (`reader.la`), which checks claims against the bytes left before copying or looping, and keeps the item and string-byte budgets.
+- Floats convert on their integer bits (`float.la`, MEMORY.md 5); never `as f32`/`as f64`.
+- Duplicate keys: merge sort of preferred encodings (`keys.la`, MEMORY.md 4); never a hash.
+- `lib.la` only re-exports (`public import m { * }`). Modules that export a same-named function are named differently (`decoder`, `encoder`).
 
 ---
 
@@ -154,8 +161,9 @@ Expected failures return `Result<T, E>` with typed error enums. Every malformed,
 ├── .claude/settings.json — deny rules mirroring .llmignore
 ├── LICENSE               — GPL-3.0-only
 ├── lugha.toml            — package `cbor`, source `src`
-├── src/lib.la            — the entry (`import cbor;`): the lughac init placeholder today
-├── examples/hello.la     — placeholder example
+├── src/lib.la            — the entry (`import cbor;`): re-exports only
+├── src/                  — value, limits, error, reader, decoder, keys, float, encoder
+├── examples/round_trip.la — encodes and decodes a small nested value
 ├── test/                 — @test files mirroring src/
 ├── PRPs/                 — TEMPLATE.md, DISCOVERY.md, prp-{NNN}-….md
 ├── docs/                 — CODE_STYLE.md, setup.md, source/, specs/ decisions/ incidents/ status/
@@ -175,4 +183,4 @@ Expected failures return `Result<T, E>` with typed error enums. Every malformed,
 
 ## KNOWN ISSUES — DO NOT FIX
 
-- `src/lib.la` and `examples/hello.la` are the `lughac init` placeholders, kept until PRP-001 replaces them.
+- None.

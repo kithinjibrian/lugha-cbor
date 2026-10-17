@@ -64,7 +64,13 @@ fun single_infinities_and_nans() {
 
 @test
 fun double_is_exact() {
-    for b of [0x7ff0000000000001, 0xfff8000000000123, 0x0000000000000001, 0x8000000000000000] {
+    let all: u64[] = [
+        0x7ff0000000000001,
+        0xfff8000000000123,
+        0x0000000000000001,
+        0x8000000000000000,
+    ];
+    for b of all {
         assert_eq(float.from_double(b).to_bits(), b);
     }
 }

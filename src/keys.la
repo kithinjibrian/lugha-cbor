@@ -1,0 +1,43 @@
+/**
+ * Finds duplicate keys in one map (RFC 8949 §5.6) by sorting, never by
+ * hashing (DECISION-003): each key is encoded in preferred serialisation,
+ * so equal data items give equal bytes however they arrived; the encodings
+ * are merge-sorted and neighbours compared. O(n log n) comparisons, with no
+ * input that makes it quadratic.
+ *
+ * Depends on: value, encoder
+ * Used by: decoder
+ */
+
+import value { Entry };
+import encoder;
+
+/** Whether `a` sorts before `b`, byte by byte, a proper prefix first. */
+fun less(a: u8[], b: u8[]): bool {
+    let n = if a.len < b.len { a.len } else { b.len };
+    for i in 0..n {
+        if a[i] != b[i] {
+            return a[i] < b[i];
+        }
+    }
+    a.len < b.len
+}
+
+/**
+ * Whether two entries have equal keys.
+ *
+ * @param entries a map's entries
+ */
+fun has_duplicate(entries: Entry[]): bool {
+    if entries.len < 2 {
+        return false;
+    }
+    // sort_by is the prelude's bottom-up merge sort: O(n log n) at worst
+    let keys = entries.map(fun(e) = encoder.encode(e.key)).sort_by(less);
+    for i in 1..keys.len {
+        if keys[i - 1] == keys[i] {
+            return true;
+        }
+    }
+    false
+}

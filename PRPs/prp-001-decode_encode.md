@@ -1,6 +1,6 @@
 # PRP-001 — Decode and encode CBOR
 
-**Status:** approved by the owner, session 3. DECISION-002 resolved by lughac m108.
+**Status:** built and merged, session 3 (approved by the owner the same session). DECISION-002 resolved by lughac m108.
 **Branch:** `prp-001-decode-encode`
 **Source:** the owner's brief, session 2 (2026-10-17); answers to the two gaps are DECISION-002 and DECISION-003.
 
@@ -40,15 +40,17 @@ src/error.la      DecodeError, Malformation
 src/reader.la     Reader: one head (initial byte + argument), definite and indefinite
                   byte/text strings (strict UTF-8), and the item/byte budget, all
                   bounds-checked (*)
-src/decode.la     decode(): the iterative decoder (an explicit frame stack)
+src/decoder.la    decode(): the iterative decoder (an explicit frame stack) (**)
 src/keys.la       duplicate-key detection (DECISION-003)
 src/float.la      half/single/double <-> f64, on the integer bits (DECISION-002)
-src/encode.la     encode(): preferred serialisation, iterative
+src/encoder.la    encode(): preferred serialisation, iterative (**)
 test/…            one file per area, mirroring src/ (see TESTS TO WRITE)
 examples/round_trip.la   replaces examples/hello.la; .gitignore updated
 ```
 
 (*) Session 3, before any code: the PRP first split this into `head.la` and `strings.la`. An `impl` must be in its type's file (spec §4) and only externs take `mut` parameters (§3), so everything that advances the shared cursor is a `mut self` method of one `Reader`. Same behaviour, one file.
+
+(**) Session 3: named `decoder`/`encoder`, not `decode`/`encode`. A glob re-export of module `decode` would make `decode` both the module and its function in `lib` (E0314).
 
 - **RFC 8949 sections covered:** §3 (the encoding: major types 0–7, heads, additional information 0–27 and 31, reserved 28–30), §3.1 (major types; strict UTF-8 for text), §3.2 (indefinite lengths and the break code, decode only), §3.3 (floats and simple values), §3.4 (tags as number + content, no semantics), §4.1 (preferred serialisation, for the encoder), §5.3.1 (basic validity: UTF-8, duplicate keys), §5.4 (resource limits), §5.6 (duplicate keys), Appendix A (examples), Appendix F (not-well-formed inputs).
 - **Lugha spec sections relied on** (each checked in `lughac spec`, v17):
@@ -144,7 +146,7 @@ public struct Limits { max_depth: i64, max_items: i64, max_bytes: i64, max_strin
 - Iterative: a work stack of `Value`s, children pushed in reverse. So encoding never recurses, whatever the depth.
 - Never fails: every `Value` is encodable (see `SimpleValue`).
 
-**The entry** `src/lib.la`: module doc, `public import` with `{ * }` of `value`, `limits`, `error`, `decode` and `encode`. Nothing else is public. `reader`, `keys` and `float` are package-level.
+**The entry** `src/lib.la`: module doc, `public import` with `{ * }` of `value`, `limits`, `error`, `decoder` and `encoder`. Nothing else is public. `reader`, `keys` and `float` are package-level.
 
 **The example** `examples/round_trip.la` replaces `examples/hello.la`. It builds a small nested value (a map holding text, a negative int, a float, an array and a nested map), encodes it, prints the bytes in hex, decodes them, reads fields back with the helpers, and shows that a decode error prints. `.gitignore`'s `/examples/hello` and `/hello` become `/examples/round_trip` and `/round_trip`.
 
@@ -188,7 +190,7 @@ public enum Malformation {
 
 ## SECURITY CONSIDERATIONS
 
-- **Claimed lengths:** checked in `src/reader.la` before any loop or allocation. A string needs `len ≤ left`. A definite array needs `count ≤ left` (each item takes at least one byte). A map needs `count ≤ left / 2`. All comparisons are in `u64` against `left as u64` (`left ≥ 0`), so nothing is added to a claim and nothing overflows. Nothing is preallocated from a claim: elements are pushed as they are decoded.
+- **Claimed lengths:** checked in `src/reader.la` before any loop or allocation. A string needs `len ≤ left`. A definite array or map needs `count ≤ left` (each element, and each map key, takes at least one byte). Not `left / 2` for a map: `a1 ff` must read its break and be `Malformed(UnexpectedBreak)`, as Appendix F files it (session 3). All comparisons are in `u64` against `left as u64` (`left ≥ 0`), so nothing is added to a claim and nothing overflows. Nothing is preallocated from a claim: elements are pushed as they are decoded.
 - **Depth:** the frame stack's length, checked before each push. No recursion in decode, encode or key encoding, so a large `max_depth` can't overflow the stack. (lughac's own generated `==` and printing of `Value` do recurse, but a decoded value's depth is at most `max_depth`.)
 - **Items and bytes:** counters checked with `checked_add` against the limits, at each head and each early claim.
 - **Overflow in offsets:** the position only advances by amounts already checked to fit in the bytes left, so `pos + n ≤ bytes.len` always holds and never overflows `i64`.
@@ -200,9 +202,9 @@ public enum Malformation {
 
 Test first, each file under 400 lines, in `test/` mirroring `src/`:
 
-- [ ] `test/decode_appendix_a.la`: every RFC 8949 Appendix A example decodes to its value. Covers the integers 0 … 2^64-1 and -1 … -2^64; the bignum tags 2 and 3 as `Tag`; every float example (half, single, double, ±0, subnormal 5.960464477539063e-8, 65504.0, 100000.0, 3.4028234663852886e+38, 1.0e+300, -4.1, ±Infinity and NaN in all three widths); false, true, null, undefined, simple(16), simple(255); the tags 0, 1, 23, 24 and 32; the byte and text strings ("ü", "水", "𐅑"); arrays, maps and nested ones; and every indefinite-length example.
-- [ ] `test/encode.la`: every Appendix A example whose encoding is preferred encodes to exactly those bytes. That's all of them except the indefinite-length ones and the non-shortest Infinity/NaN encodings (`fa…`, `fb…`), which instead encode to their preferred forms (`f9 7c 00`, `f9 7e 00`, `f9 fc 00`). Also NaN payloads preserved through decode → encode.
-- [ ] `test/decode_appendix_f.la`: every Appendix F not-well-formed example, with its expected error:
+- [x] `test/decode_appendix_a.la`: every RFC 8949 Appendix A example decodes to its value. Covers the integers 0 … 2^64-1 and -1 … -2^64; the bignum tags 2 and 3 as `Tag`; every float example (half, single, double, ±0, subnormal 5.960464477539063e-8, 65504.0, 100000.0, 3.4028234663852886e+38, 1.0e+300, -4.1, ±Infinity and NaN in all three widths); false, true, null, undefined, simple(16), simple(255); the tags 0, 1, 23, 24 and 32; the byte and text strings ("ü", "水", "𐅑"); arrays, maps and nested ones; and every indefinite-length example.
+- [x] `test/encode.la`: every Appendix A example whose encoding is preferred encodes to exactly those bytes. That's all of them except the indefinite-length ones and the non-shortest Infinity/NaN encodings (`fa…`, `fb…`), which instead encode to their preferred forms (`f9 7c 00`, `f9 7e 00`, `f9 fc 00`). Also NaN payloads preserved through decode → encode.
+- [x] `test/decode_appendix_f.la`: every Appendix F not-well-formed example, with its expected error:
   - end of input in a head: `18`, `19`, `1a`, `1b`, `19 01`, `1a 01 02`, `1b 01 02 03 04 05 06 07`, `38`, `58`, `78`, `98`, `9a 01 ff 00`, `b8`, `d8`, `f8`, `f9 00`, `fa 00 00`, `fb 00 00 00` → Truncated
   - definite strings with short data: `41`, `61`, `5a ff ff ff ff 00`, `5b ff ff ff ff ff ff ff ff 01 02 03`, `7a ff ff ff ff 00`, `7b 7f ff ff ff ff ff ff ff 01 02 03` → Truncated
   - definite arrays and maps without enough items: `81`, `81 81 81 81 81 81 81 81 81`, `82 00`, `a1`, `a2 01 02`, `a1 00`, `a2 00 00 00` → Truncated
@@ -217,43 +219,43 @@ Test first, each file under 400 lines, in `test/` mirroring `src/`:
   - a break in a definite array, map or tag: `81 ff`, `82 00 ff`, `a1 ff`, `a1 ff 00`, `a1 00 ff`, `a2 00 00 ff`, `9f 81 ff`, `9f 82 9f 81 9f 9f ff ff ff ff` → Malformed(UnexpectedBreak)
   - a break in a map's value position: `bf 00 ff`, `bf 00 00 00 ff` → Malformed(UnexpectedBreak)
   - indefinite length on major 0, 1, 6: `1f`, `3f`, `df` → Malformed(IndefiniteNotAllowed)
-- [ ] `test/decode_limits.la`, one test per limit at its edge (exactly at the limit passes, one over fails):
+- [x] `test/decode_limits.la`, one test per limit at its edge (exactly at the limit passes, one over fails):
   - depth: arrays, maps, tags and a mix → TooDeep; `max_depth` 0 accepts a scalar and rejects `80`
   - items: many small items → TooManyItems; an early claim (`9a 00 0f 42 41` …) → TooManyItems before reading elements
   - one string over `max_string`, definite and as indefinite chunks → TooLarge
   - many strings over `max_bytes` → TooLarge
   - a deep input (100,000 nested `81`) with a huge `max_depth` decodes without a stack overflow (proves no recursion)
-- [ ] `test/decode_hostile.la`:
+- [x] `test/decode_hostile.la`:
   - huge claimed lengths in tiny inputs: `5b ff…ff`, `7b ff…ff`, `9b ff…ff`, `bb ff…ff`, and the same with 32-bit heads → Truncated, at once
   - a map claiming 2^63 entries → Truncated
   - invalid UTF-8 → InvalidUtf8: overlong (`62 c0 80`), surrogate (`63 ed a0 80`), above U+10FFFF (`64 f4 90 80 80`), truncated sequence (`61 c3`), and a code point split across two chunks (`7f 61 c3 61 bc ff`)
   - duplicate keys → DuplicateKey: plain (`a2 01 00 01 00`), non-preferred (`a2 01 00 18 01 00`), definite vs indefinite text, equal nested keys, the duplicate as the last of 10,000 keys
   - trailing bytes → TrailingBytes (`00 00`, `80 00`)
   - empty input → Truncated
-- [ ] `test/keys.la`: a 10,000-key map decodes fast (the suite runs it with `--timeout 2`). So do 10,000 keys sharing a long common prefix (worst case for comparisons) and 10,000 keys built to collide under FNV-1a's low bits (would be slow under hashing).
-- [ ] `test/float.la`: half, single and double ↔ f64 at the edges: subnormals, the largest finite, ±0, ±inf, quiet and signalling NaN payloads. Shortest-width choice: 1.5 → half, 100000.0 → single, 1.1 → double, 65504.0 → half, 65505.0 → single.
-- [ ] `test/value.la`: every helper, happy path and `None` path (`as_i64` on `Unsigned(u64.MAX)` and on `Negative(i64.MAX as u64 + 1)` → None, `get` on a non-map → None, a missing key → None). `Value.int` at `i64.MIN`, -1, 0 and `i64.MAX`. `SimpleValue.new` for 0, 19, 20, 31, 32 and 255.
-- [ ] `test/round_trip.la`: `decode(encode(v)) == Ok(v)` for a set of values covering every variant, nested; and `encode(decode(b))` gives `b` back for every preferred Appendix A encoding.
-- [ ] Error paths: every `DecodeError` and `Malformation` variant appears in at least one test above.
+- [x] `test/keys.la`: a 10,000-key map decodes fast (the suite runs it with `--timeout 2`). So do the same keys in reverse order and 10,000 keys sharing a 200-byte prefix (worst case for comparisons). A duplicate as the last key is found. (Session 3: the FNV-collision case was dropped. This package doesn't hash, so it would only test lughac's `Map`. Hashing is ruled out by DECISION-003 and Must NOT Do instead.)
+- [x] `test/float.la`: half, single and double ↔ f64 at the edges: subnormals, the largest finite, ±0, ±inf, quiet and signalling NaN payloads. Shortest-width choice: 1.5 → half, 100000.0 → single, 1.1 → double, 65504.0 → half, 65505.0 → single.
+- [x] `test/value.la`: every helper, happy path and `None` path (`as_i64` on `Unsigned(u64.MAX)` and on `Negative(i64.MAX as u64 + 1)` → None, `get` on a non-map → None, a missing key → None). `Value.int` at `i64.MIN`, -1, 0 and `i64.MAX`. `SimpleValue.new` for 0, 19, 20, 31, 32 and 255.
+- [x] `test/round_trip.la`: `decode(encode(v)) == Ok(v)` for a set of values covering every variant, nested; and `encode(decode(b))` gives `b` back for every preferred Appendix A encoding.
+- [x] Error paths: every `DecodeError` and `Malformation` variant appears in at least one test above.
 
 ## ROLLBACK PLAN
 - Branch to return to: `main` at `67c0128` (session 1).
 - State the codebase should be in: the `lughac init` placeholders and the context system, unchanged. The PRP branch is deleted unmerged.
 
 ## ACCEPTANCE CRITERIA
-- [ ] Every Appendix A example decodes to its value, and every preferred one encodes to its exact bytes.
-- [ ] Every Appendix F example gives its expected `Err`.
-- [ ] Each limit is enforced, exactly at its edge.
-- [ ] No input panics, hangs or allocates past the limits; huge claims in tiny inputs fail at once.
-- [ ] A 10,000-key map (plain, common-prefix, and FNV-colliding) decodes within the 2-second test timeout.
-- [ ] 100,000 nested arrays decode with a raised `max_depth` without a stack overflow.
-- [ ] Round trips hold for every variant.
-- [ ] `examples/round_trip.la` builds and runs; `examples/hello.la` is gone.
-- [ ] `lughac test test/` passes; every example builds
-- [ ] `lughac fmt --check src examples test` is clean
-- [ ] Every `public` item has a `/** … */` doc comment
-- [ ] No file over 400 lines
-- [ ] CHANGELOG.md updated
+- [x] Every Appendix A example decodes to its value, and every preferred one encodes to its exact bytes.
+- [x] Every Appendix F example gives its expected `Err`.
+- [x] Each limit is enforced, exactly at its edge.
+- [x] No input panics, hangs or allocates past the limits; huge claims in tiny inputs fail at once.
+- [x] A 10,000-key map (plain, reversed, common-prefix) decodes within the 2-second test timeout.
+- [x] 100,000 nested arrays decode with a raised `max_depth` without a stack overflow.
+- [x] Round trips hold for every variant.
+- [x] `examples/round_trip.la` builds and runs; `examples/hello.la` is gone.
+- [x] `lughac test test/` passes; every example builds
+- [x] `lughac fmt --check src examples test` is clean
+- [x] Every `public` item has a `/** … */` doc comment
+- [x] No file over 400 lines
+- [x] CHANGELOG.md updated
 
 ## VALIDATION
 - `lughac fmt --check src examples test`

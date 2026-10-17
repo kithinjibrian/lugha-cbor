@@ -1,0 +1,40 @@
+/**
+ * The errors `decode` returns: every way untrusted bytes can be rejected.
+ * Not responsible for finding them; `reader` and `decode` do.
+ *
+ * Used by: reader, decoder, lib
+ */
+
+/** Why `decode` rejected its input. */
+public enum DecodeError {
+    /** The input ends inside an item, or an item claims more than is left. */
+    Truncated,
+    /** The input isn't well-formed CBOR (RFC 8949 Appendix F); the payload says how. */
+    Malformed(Malformation),
+    /** More arrays, maps and tags nested inside each other than `Limits.max_depth`. */
+    TooDeep,
+    /** More data items in total than `Limits.max_items`. */
+    TooManyItems,
+    /** One string over `Limits.max_string` bytes, or all strings over `Limits.max_bytes`. */
+    TooLarge,
+    /** A text string, or one chunk of one, that isn't strict UTF-8 (RFC 8949 §3.1). */
+    InvalidUtf8,
+    /** Two equal keys in one map (RFC 8949 §5.6). */
+    DuplicateKey,
+    /** Bytes left over after the one data item. */
+    TrailingBytes,
+}
+
+/** How an input isn't well-formed. */
+public enum Malformation {
+    /** Additional information 28, 29 or 30, which are reserved (RFC 8949 §3). */
+    ReservedInfo,
+    /** Additional information 31 (indefinite length) on major type 0, 1 or 6. */
+    IndefiniteNotAllowed,
+    /** A two-byte simple value below 32 (RFC 8949 §3.3). */
+    ReservedSimple,
+    /** A chunk of an indefinite-length string that isn't a definite string of the same type (§3.2.3). */
+    BadChunk,
+    /** A break code anywhere but closing an indefinite-length item, or in a map's value position. */
+    UnexpectedBreak,
+}

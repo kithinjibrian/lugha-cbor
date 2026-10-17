@@ -11,8 +11,15 @@ import support { dec, decodes, fails, t, u, kv };
 @test
 fun huge_claimed_lengths_in_tiny_inputs() {
     for s of [
-        "5b ffffffffffffffff", "7b ffffffffffffffff", "9b ffffffffffffffff", "bb ffffffffffffffff",
-        "5a ffffffff", "7a ffffffff", "9a ffffffff", "ba ffffffff", "5b 7fffffffffffffff 00",
+        "5b ffffffffffffffff",
+        "7b ffffffffffffffff",
+        "9b ffffffffffffffff",
+        "bb ffffffffffffffff",
+        "5a ffffffff",
+        "7a ffffffff",
+        "9a ffffffff",
+        "ba ffffffff",
+        "5b 7fffffffffffffff 00",
         "9b 7fffffffffffffff 00",
     ] {
         fails(s, DecodeError.Truncated);
@@ -77,7 +84,13 @@ fun duplicate_keys_in_other_encodings() {
 @test
 fun different_keys_are_not_duplicates() {
     // 1 and -2, 1 and "1", 0.0 and -0.0, [1] and 1, 1 and 6(1)
-    for s of ["a2 01 00 21 00", "a2 01 00 6131 00", "a2 f90000 00 f98000 00", "a2 81 01 00 01 00", "a2 01 00 c6 01 00"] {
+    for s of [
+        "a2 01 00 21 00",
+        "a2 01 00 6131 00",
+        "a2 f90000 00 f98000 00",
+        "a2 81 01 00 01 00",
+        "a2 01 00 c6 01 00",
+    ] {
         assert(dec(s).is_ok());
     }
 }

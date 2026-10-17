@@ -84,7 +84,10 @@ fun simple_values() {
 
 @test
 fun tags() {
-    decodes("c074323031332d30332d32315432303a30343a30305a", Value.Tag(0, t("2013-03-21T20:04:00Z")));
+    decodes(
+        "c074323031332d30332d32315432303a30343a30305a",
+        Value.Tag(0, t("2013-03-21T20:04:00Z")),
+    );
     decodes("c11a514b67b0", Value.Tag(1, u(1363896240)));
     decodes("c1fb41d452d9ec200000", Value.Tag(1, Value.Float(1363896240.5)));
     decodes("d74401020304", Value.Tag(23, Value.Bytes(hex("01020304"))));
@@ -123,7 +126,10 @@ fun arrays() {
 fun maps() {
     decodes("a0", Value.Map([]));
     decodes("a201020304", Value.Map([kv(u(1), u(2)), kv(u(3), u(4))]));
-    decodes("a26161016162820203", Value.Map([kv(t("a"), u(1)), kv(t("b"), Value.Array([u(2), u(3)]))]));
+    decodes(
+        "a26161016162820203",
+        Value.Map([kv(t("a"), u(1)), kv(t("b"), Value.Array([u(2), u(3)]))]),
+    );
     decodes("826161a161626163", Value.Array([t("a"), Value.Map([kv(t("b"), t("c"))])]));
     decodes(
         "a56161614161626142616361436164614461656145",
@@ -161,7 +167,10 @@ fun indefinite_maps() {
         Value.Map([kv(t("a"), u(1)), kv(t("b"), Value.Array([u(2), u(3)]))]),
     );
     decodes("826161bf61626163ff", Value.Array([t("a"), Value.Map([kv(t("b"), t("c"))])]));
-    decodes("bf6346756ef563416d7421ff", Value.Map([kv(t("Fun"), Value.Bool(true)), kv(t("Amt"), Value.int(-2))]));
+    decodes(
+        "bf6346756ef563416d7421ff",
+        Value.Map([kv(t("Fun"), Value.Bool(true)), kv(t("Amt"), Value.int(-2))]),
+    );
 }
 
 /** The array [1, 2, …, 25]. */

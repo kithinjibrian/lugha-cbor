@@ -61,9 +61,8 @@ Read this at the start of every session before writing any code.
 
 ### Fully Working
 - `lughac init --lib` skeleton; context system (session 1).
+- PRP-001 (session 3): `Value`, `decode` with `Limits`, `encode`, the reading helpers; 86 tests.
 
-### In progress
-- PRP-001: the decoder and encoder (`PRPs/prp-001-decode_encode.md`). DECISION-002 resolved by lughac m108.
 
 ---
 

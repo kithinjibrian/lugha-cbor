@@ -1,0 +1,200 @@
+/**
+ * CBOR bytes to `Value`, safe on hostile input. Nesting is an explicit
+ * stack of frames, never recursion, and its height is checked against
+ * `max_depth` before every push. Not responsible for heads, strings or
+ * budgets (`reader`) or duplicate keys (`keys`).
+ *
+ * Depends on: value, error, limits, reader, keys
+ * Used by: lib
+ */
+
+import value { Value, Entry };
+import error { DecodeError, Malformation };
+import limits as lim { Limits };
+import reader { Head, Reader };
+import keys;
+
+/** What an open frame is building. */
+enum Kind {
+    Array,
+    Map,
+    Tag,
+}
+
+/** One open array, map or tag. */
+struct Frame {
+    kind: Kind,
+    indefinite: bool,
+    /** Items still to come in a definite frame; a map counts keys and values. */
+    remaining: u64,
+    /** What has come so far; a map's keys and values alternate. */
+    items: Value[],
+    tag: u64,
+}
+
+/** The reader and the open frames, innermost last. */
+struct Decoder {
+    r: Reader,
+    stack: Frame[],
+    max_depth: i64,
+}
+
+/**
+ * Decodes one CBOR data item that fills `bytes` exactly, safe on any input:
+ * every claimed length is checked against the bytes left before it is used,
+ * depth, items and string bytes are limited, and nothing recurses.
+ *
+ * @param bytes the encoded item, from anywhere, trusted or not
+ * @param limits the most depth, items and string bytes to accept
+ * @returns the value; `Err(Truncated)`, `Err(Malformed(…))`, `Err(TooDeep)`,
+ *     `Err(TooManyItems)`, `Err(TooLarge)`, `Err(InvalidUtf8)`,
+ *     `Err(DuplicateKey)` or `Err(TrailingBytes)`
+ *
+ * Example:
+ *     decode(bytes, Limits.default())
+ */
+public fun decode(bytes: u8[], limits: Limits): Result<Value, DecodeError> {
+    let mut d = Decoder {
+        r: Reader.new(bytes, limits),
+        stack: [],
+        max_depth: if limits.max_depth < 0 { 0 } else { limits.max_depth },
+    };
+    d.run()
+}
+
+impl Decoder {
+    /** Reads items until the top-level one is complete. */
+    fun run(mut self): Result<Value, DecodeError> {
+        while true {
+            let h = self.r.head()?;
+            let mut done: Option<Value> = None;
+            if h.is_break() {
+                done = Some(self.close_indefinite()?);
+            } else if h.major == 4 || h.major == 5 || h.major == 6 {
+                done = self.open(h)?;
+            } else {
+                done = Some(self.r.scalar(h)?);
+            }
+            // hand each finished value to the frame above, closing every
+            // frame it completes
+            while let Some(v) = done {
+                let last = self.stack.len - 1;
+                if last < 0 {
+                    if self.r.left() > 0 {
+                        return Err(DecodeError.TrailingBytes);
+                    }
+                    return Ok(v);
+                }
+                self.stack[last].items.push(v);
+                done = None;
+                if !self.stack[last].indefinite {
+                    self.stack[last].remaining -= 1;
+                    if self.stack[last].remaining == 0 {
+                        done = Some(self.close()?);
+                    }
+                }
+            }
+        }
+        panic("cbor: internal error: the decode loop ended")
+    }
+
+    /**
+     * Opens an array, map or tag whose head `h` is read: checks its claim,
+     * then the depth and the item budget, then pushes its frame. An empty
+     * definite array or map is complete at once.
+     */
+    fun open(mut self, h: Head): Result<Option<Value>, DecodeError> {
+        let kind = if h.major == 4 {
+            Kind.Array
+        } else if h.major == 5 {
+            Kind.Map
+        } else {
+            Kind.Tag
+        };
+        // a tag is never indefinite (the head rejects it) and holds one item
+        let per: u64 = if kind == Kind.Map { 2 } else { 1 };
+        let count: u64 = if kind == Kind.Tag { 1 } else { h.arg };
+        // every element, and every map key, takes at least one byte: check
+        // the claim against the bytes left before anything else, so a huge
+        // count fails at once. (Not 2 bytes per map entry: `a1 ff` must read
+        // its break and be malformed, as RFC 8949 Appendix F files it.)
+        if !h.indefinite() && kind != Kind.Tag && !self.r.fits(count, 1) {
+            return Err(DecodeError.Truncated);
+        }
+        if self.stack.len >= self.max_depth {
+            return Err(DecodeError.TooDeep);
+        }
+        self.r.take_item()?;
+        if h.indefinite() {
+            self.stack.push(Frame {
+                kind: kind,
+                indefinite: true,
+                remaining: 0,
+                items: [],
+                tag: 0,
+            });
+            return Ok(None);
+        }
+        // fits() bounded count by the bytes left (< 2^63), so count * 2 can't overflow
+        let remaining = count * per;
+        self.r.claim_items(remaining)?;
+        if remaining == 0 {
+            let empty: Value[] = [];
+            let none: Entry[] = [];
+            return Ok(Some(if kind == Kind.Map { Value.Map(none) } else { Value.Array(empty) }));
+        }
+        let tag: u64 = if kind == Kind.Tag { h.arg } else { 0 };
+        self.stack.push(Frame {
+            kind: kind,
+            indefinite: false,
+            remaining: remaining,
+            items: [],
+            tag: tag,
+        });
+        Ok(None)
+    }
+
+    /**
+     * Closes the innermost frame on a break. RFC 8949 §3.2.1: a break only
+     * closes an indefinite array or map, and a map only where a key would
+     * come.
+     */
+    fun close_indefinite(mut self): Result<Value, DecodeError> {
+        let last = self.stack.len - 1;
+        if last < 0 || !self.stack[last].indefinite {
+            return Err(DecodeError.Malformed(Malformation.UnexpectedBreak));
+        }
+        if self.stack[last].kind == Kind.Map && self.stack[last].items.len % 2 == 1 {
+            return Err(DecodeError.Malformed(Malformation.UnexpectedBreak));
+        }
+        self.close()
+    }
+
+    /** Pops the innermost frame and builds its value; a map's keys must be unique. */
+    fun close(mut self): Result<Value, DecodeError> {
+        let Some(f) = self.stack.pop() else {
+            panic("cbor: internal error: no frame to close");
+        };
+        match f.kind {
+            Array => Ok(Value.Array(f.items)),
+            Tag => {
+                if f.items.len != 1 {
+                    panic("cbor: internal error: a tag closed with {f.items.len} items");
+                }
+                Ok(Value.Tag(f.tag, f.items[0]))
+            }
+            Map => {
+                let mut entries: Entry[] = [];
+                let mut i = 0;
+                while i + 1 < f.items.len {
+                    entries.push(Entry { key: f.items[i], value: f.items[i + 1] });
+                    i += 2;
+                }
+                if keys.has_duplicate(entries) {
+                    return Err(DecodeError.DuplicateKey);
+                }
+                Ok(Value.Map(entries))
+            }
+        }
+    }
+}

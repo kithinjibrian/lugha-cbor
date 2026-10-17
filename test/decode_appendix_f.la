@@ -19,8 +19,24 @@ fun all_fail(inputs: string[], e: DecodeError) {
 fun end_of_input_in_a_head() {
     all_fail(
         [
-            "18", "19", "1a", "1b", "19 01", "1a 01 02", "1b 01 02 03 04 05 06 07", "38", "58", "78",
-            "98", "9a 01 ff 00", "b8", "d8", "f8", "f9 00", "fa 00 00", "fb 00 00 00",
+            "18",
+            "19",
+            "1a",
+            "1b",
+            "19 01",
+            "1a 01 02",
+            "1b 01 02 03 04 05 06 07",
+            "38",
+            "58",
+            "78",
+            "98",
+            "9a 01 ff 00",
+            "b8",
+            "d8",
+            "f8",
+            "f9 00",
+            "fa 00 00",
+            "fb 00 00 00",
         ],
         DecodeError.Truncated,
     );
@@ -30,7 +46,11 @@ fun end_of_input_in_a_head() {
 fun definite_strings_with_short_data() {
     all_fail(
         [
-            "41", "61", "5a ff ff ff ff 00", "5b ff ff ff ff ff ff ff ff 01 02 03", "7a ff ff ff ff 00",
+            "41",
+            "61",
+            "5a ff ff ff ff 00",
+            "5b ff ff ff ff ff ff ff ff 01 02 03",
+            "7a ff ff ff ff 00",
             "7b 7f ff ff ff ff ff ff ff 01 02 03",
         ],
         DecodeError.Truncated,
@@ -59,7 +79,13 @@ fun indefinite_strings_without_a_break() {
 fun indefinite_containers_without_a_break() {
     all_fail(
         [
-            "9f", "9f 01 02", "bf", "bf 01 02 01 02", "81 9f", "9f 80 00", "9f 9f 9f 9f 9f ff ff ff ff",
+            "9f",
+            "9f 01 02",
+            "bf",
+            "bf 01 02 01 02",
+            "81 9f",
+            "9f 80 00",
+            "9f 9f 9f 9f 9f ff ff ff ff",
             "9f 81 9f 81 9f 9f ff ff ff",
         ],
         DecodeError.Truncated,
@@ -70,8 +96,30 @@ fun indefinite_containers_without_a_break() {
 fun reserved_additional_information() {
     all_fail(
         [
-            "1c", "1d", "1e", "3c", "3d", "3e", "5c", "5d", "5e", "7c", "7d", "7e", "9c", "9d", "9e", "bc",
-            "bd", "be", "dc", "dd", "de", "fc", "fd", "fe",
+            "1c",
+            "1d",
+            "1e",
+            "3c",
+            "3d",
+            "3e",
+            "5c",
+            "5d",
+            "5e",
+            "7c",
+            "7d",
+            "7e",
+            "9c",
+            "9d",
+            "9e",
+            "bc",
+            "bd",
+            "be",
+            "dc",
+            "dd",
+            "de",
+            "fc",
+            "fd",
+            "fe",
         ],
         DecodeError.Malformed(Malformation.ReservedInfo),
     );
@@ -79,20 +127,35 @@ fun reserved_additional_information() {
 
 @test
 fun reserved_two_byte_simple_values() {
-    all_fail(["f8 00", "f8 01", "f8 18", "f8 1f"], DecodeError.Malformed(Malformation.ReservedSimple));
+    all_fail(
+        ["f8 00", "f8 01", "f8 18", "f8 1f"],
+        DecodeError.Malformed(Malformation.ReservedSimple),
+    );
 }
 
 @test
 fun chunks_of_the_wrong_type() {
     all_fail(
-        ["5f 00 ff", "5f 21 ff", "5f 61 00 ff", "5f 80 ff", "5f a0 ff", "5f c0 00 ff", "5f e0 ff", "7f 41 00 ff"],
+        [
+            "5f 00 ff",
+            "5f 21 ff",
+            "5f 61 00 ff",
+            "5f 80 ff",
+            "5f a0 ff",
+            "5f c0 00 ff",
+            "5f e0 ff",
+            "7f 41 00 ff",
+        ],
         DecodeError.Malformed(Malformation.BadChunk),
     );
 }
 
 @test
 fun indefinite_chunks() {
-    all_fail(["5f 5f 41 00 ff ff", "7f 7f 61 00 ff ff"], DecodeError.Malformed(Malformation.BadChunk));
+    all_fail(
+        ["5f 5f 41 00 ff ff", "7f 7f 61 00 ff ff"],
+        DecodeError.Malformed(Malformation.BadChunk),
+    );
 }
 
 @test
@@ -103,7 +166,16 @@ fun a_lone_break() {
 @test
 fun a_break_in_a_definite_container_or_tag() {
     all_fail(
-        ["81 ff", "82 00 ff", "a1 ff", "a1 ff 00", "a1 00 ff", "a2 00 00 ff", "9f 81 ff", "9f 82 9f 81 9f 9f ff ff ff ff"],
+        [
+            "81 ff",
+            "82 00 ff",
+            "a1 ff",
+            "a1 ff 00",
+            "a1 00 ff",
+            "a2 00 00 ff",
+            "9f 81 ff",
+            "9f 82 9f 81 9f 9f ff ff ff ff",
+        ],
         DecodeError.Malformed(Malformation.UnexpectedBreak),
     );
     fails("c0 ff", DecodeError.Malformed(Malformation.UnexpectedBreak));

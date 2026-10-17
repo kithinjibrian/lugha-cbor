@@ -1,0 +1,55 @@
+/**
+ * Encodes a small nested value, prints its bytes, decodes them back, reads
+ * fields out with the helpers, and shows what decode errors look like.
+ * Run it with `lughac run examples/round_trip.la`.
+ */
+
+import cbor { Value, Entry, Limits, decode, encode };
+
+/** A text-keyed map entry. */
+fun field(key: string, value: Value): Entry = Entry { key: Value.Text(key), value: value };
+
+/** The bytes as lowercase hex pairs. */
+fun hex(bytes: u8[]): string = bytes.map(fun(b) = "{b:02x}").join("");
+
+/** The node's kind, if it has a text one. */
+fun kind(node: Value): Option<string> = node.get("kind")?.as_text();
+
+/** The text under "props" → "text", if the node has one. */
+fun props_text(node: Value): Option<string> = node.get("props")?.get("text")?.as_text();
+
+/** The node's offset, if it has one that fits an i64. */
+fun offset(node: Value): Option<i64> = node.get("offset")?.as_i64();
+
+fun main() {
+    let node = Value.Map([
+        field("kind", Value.Text("text")),
+        field(
+            "props",
+            Value.Map([field("text", Value.Text("Count: 3")), field("size", Value.Float(1.5))]),
+        ),
+        field("offset", Value.int(-3)),
+        field("tags", Value.Array([Value.Text("a"), Value.Bool(true), Value.Null])),
+    ]);
+    let bytes = encode(node);
+    println("{bytes.len} bytes: {hex(bytes)}");
+
+    match decode(bytes, Limits.default()) {
+        Ok(back) => {
+            println("round trip equal: {back == node}");
+            println("kind: {kind(back)}");
+            println("props.text: {props_text(back)}");
+            println("offset: {offset(back)}");
+        }
+        Err(e) => println("unexpected: {e}"),
+    }
+
+    // A head claiming 2^64 - 1 array items with nothing after it: rejected
+    // at once, without allocating or looping.
+    let hostile: u8[] = [0x9b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+    println("hostile input: {decode(hostile, Limits.default())}");
+
+    // Tighter limits for a caller that expects flat data.
+    let flat = Limits { max_depth: 1, ..Limits.default() };
+    println("depth 1: {decode(bytes, flat)}");
+}

@@ -31,7 +31,17 @@ fun every_variant_round_trips() {
 
 @test
 fun scalars_round_trip() {
-    for v of [u(0), u(23), u(24), u(255), u(256), Value.int(-1), Value.int(-25), Value.int(i64.MIN), Value.Float(65505.0)] {
+    for v of [
+        u(0),
+        u(23),
+        u(24),
+        u(255),
+        u(256),
+        Value.int(-1),
+        Value.int(-25),
+        Value.int(i64.MIN),
+        Value.Float(65505.0),
+    ] {
         assert_eq(decode(encode(v), Limits.default()), Ok(v));
     }
 }
@@ -39,10 +49,22 @@ fun scalars_round_trip() {
 @test
 fun preferred_encodings_come_back_unchanged() {
     for s of [
-        "00", "1bffffffffffffffff", "3bffffffffffffffff", "c249010000000000000000", "f98000", "fb3ff199999999999a",
-        "fa47c35000", "f90001", "f97e00", "f8ff", "c1fb41d452d9ec200000", "64f0908591",
-        "98190102030405060708090a0b0c0d0e0f101112131415161718181819", "a26161016162820203",
-        "a56161614161626142616361436164614461656145", "826161a161626163",
+        "00",
+        "1bffffffffffffffff",
+        "3bffffffffffffffff",
+        "c249010000000000000000",
+        "f98000",
+        "fb3ff199999999999a",
+        "fa47c35000",
+        "f90001",
+        "f97e00",
+        "f8ff",
+        "c1fb41d452d9ec200000",
+        "64f0908591",
+        "98190102030405060708090a0b0c0d0e0f101112131415161718181819",
+        "a26161016162820203",
+        "a56161614161626142616361436164614461656145",
+        "826161a161626163",
     ] {
         let b = hex(s);
         assert_eq(encode(decode(b, Limits.default()).unwrap()), b);

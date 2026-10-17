@@ -62,8 +62,8 @@ fun depth_of_maps_and_tags() {
 
 @test
 fun depth_is_checked_before_the_rest_is_read() {
-    // the eleventh array fails at its head, before the truncated tail
-    assert_eq(dec_with(rep("81", 11), depth(10)), Err(DecodeError.TooDeep));
+    // the eleventh array fails at its head, before the reserved byte under it is read
+    assert_eq(dec_with(rep("81", 11) + "1c", depth(10)), Err(DecodeError.TooDeep));
 }
 
 @test

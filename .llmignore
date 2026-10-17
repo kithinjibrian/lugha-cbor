@@ -11,8 +11,8 @@ lugha.lock
 LICENSE
 
 # Built executables (see .gitignore)
-/hello
-/examples/hello
+/round_trip
+/examples/round_trip
 
 # Sibling repositories: read for reference, never write
 ../lugha/

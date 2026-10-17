@@ -28,7 +28,7 @@ impl Builder {
         }
         let mut d = 10000;
         while d > 0 {
-            self.bytes.push((48 + (i / d) % 10) as u8);
+            self.bytes.push((48 + i / d % 10) as u8);
             d /= 10;
         }
     }
@@ -76,6 +76,12 @@ fun ten_thousand_keys_sharing_a_long_prefix() {
 
 @test
 fun a_duplicate_as_the_last_of_ten_thousand_keys() {
-    assert_eq(decode(big_map(10000, 0, false, true), Limits.default()), Err(DecodeError.DuplicateKey));
-    assert_eq(decode(big_map(10000, 200, true, true), Limits.default()), Err(DecodeError.DuplicateKey));
+    assert_eq(
+        decode(big_map(10000, 0, false, true), Limits.default()),
+        Err(DecodeError.DuplicateKey),
+    );
+    assert_eq(
+        decode(big_map(10000, 200, true, true), Limits.default()),
+        Err(DecodeError.DuplicateKey),
+    );
 }

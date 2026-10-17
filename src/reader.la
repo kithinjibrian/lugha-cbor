@@ -1,0 +1,237 @@
+/**
+ * The cursor over untrusted input: reads one head at a time and whole
+ * strings, and keeps the item and string-byte budgets. Every claimed length
+ * is checked against the bytes left before anything is copied or looped
+ * over. Not responsible for nesting: `decode` keeps the frame stack.
+ *
+ * Depends on: value, error, limits
+ * Used by: decoder
+ */
+
+import value { Value, SimpleValue };
+import error { DecodeError, Malformation };
+import limits as lim { Limits };
+import float;
+
+/** One head (RFC 8949 §3): major type, additional information and its argument. */
+struct Head {
+    major: u8,
+    info: u8,
+    arg: u64,
+}
+
+impl Head {
+    /** Whether this is the break code `ff`. */
+    fun is_break(self): bool = self.major == 7 && self.info == 31;
+
+    /** Whether this head starts an indefinite-length item. */
+    fun indefinite(self): bool = self.info == 31;
+}
+
+/** The input, the position in it, and what the limits still allow. */
+struct Reader {
+    bytes: u8[],
+    pos: i64,
+    items_left: i64,
+    string_bytes_left: i64,
+    max_string: i64,
+}
+
+/** `n`, or 0 when negative: a negative limit acts as 0. */
+fun at_least_zero(n: i64): i64 = if n < 0 { 0 } else { n };
+
+impl Reader {
+    /** Starts reading `bytes` at its first byte under `limits`. */
+    fun new(bytes: u8[], limits: Limits): Reader = Reader {
+        bytes: bytes,
+        pos: 0,
+        items_left: at_least_zero(limits.max_items),
+        string_bytes_left: at_least_zero(limits.max_bytes),
+        max_string: at_least_zero(limits.max_string),
+    };
+
+    /** How many bytes are left to read. */
+    fun left(self): i64 = self.bytes.len - self.pos;
+
+    /** Whether `n` claimed things of at least `per` bytes each can fit in the bytes left. */
+    fun fits(self, n: u64, per: u64): bool = n <= self.left() as u64 / per;
+
+    /** Counts one data item against `max_items`. */
+    fun take_item(mut self): Result<i64, DecodeError> {
+        if self.items_left < 1 {
+            return Err(DecodeError.TooManyItems);
+        }
+        self.items_left -= 1;
+        Ok(self.items_left)
+    }
+
+    /**
+     * Rejects a container whose claimed `n` items can't all be counted, at
+     * its head, before any is read. Counts nothing.
+     */
+    fun claim_items(self, n: u64): Result<i64, DecodeError> {
+        if n > self.items_left as u64 {
+            return Err(DecodeError.TooManyItems);
+        }
+        Ok(self.items_left)
+    }
+
+    /**
+     * Reads one head. Reserved additional information, indefinite lengths
+     * on major types 0, 1 and 6, and two-byte simple values below 32 are
+     * malformed; a head cut short is truncated.
+     */
+    fun head(mut self): Result<Head, DecodeError> {
+        if self.left() < 1 {
+            return Err(DecodeError.Truncated);
+        }
+        let b = self.bytes[self.pos];
+        self.pos += 1;
+        let major = b >> 5;
+        let info = b & 31;
+        if info < 24 {
+            return Ok(Head { major: major, info: info, arg: info as u64 });
+        }
+        // RFC 8949 §3: 28, 29 and 30 are reserved
+        if info >= 28 && info <= 30 {
+            return Err(DecodeError.Malformed(Malformation.ReservedInfo));
+        }
+        if info == 31 {
+            // §3.2: no indefinite length for integers or tags
+            if major == 0 || major == 1 || major == 6 {
+                return Err(DecodeError.Malformed(Malformation.IndefiniteNotAllowed));
+            }
+            return Ok(Head { major: major, info: info, arg: 0 });
+        }
+        // 24, 25, 26, 27: the argument follows in 1, 2, 4 or 8 bytes
+        let n = 1 << info as i64 - 24;
+        if self.left() < n {
+            return Err(DecodeError.Truncated);
+        }
+        let mut arg: u64 = 0;
+        for i in 0..n {
+            arg = arg << 8 | self.bytes[self.pos + i] as u64;
+        }
+        self.pos += n;
+        // §3.3: a two-byte simple value below 32 is not well-formed
+        if major == 7 && info == 24 && arg < 32 {
+            return Err(DecodeError.Malformed(Malformation.ReservedSimple));
+        }
+        Ok(Head { major: major, info: info, arg: arg })
+    }
+
+    /**
+     * Reads the content of a scalar item: an integer, a string, a simple
+     * value or a float. `h` is its head, already read. Counts it.
+     */
+    fun scalar(mut self, h: Head): Result<Value, DecodeError> {
+        if h.major == 2 || h.major == 3 {
+            return self.read_string(h);
+        }
+        self.take_item()?;
+        if h.major == 0 {
+            return Ok(Value.Unsigned(h.arg));
+        }
+        if h.major == 1 {
+            return Ok(Value.Negative(h.arg));
+        }
+        // major type 7; the break is the caller's
+        if h.info == 25 {
+            return Ok(Value.Float(float.from_half(h.arg)));
+        }
+        if h.info == 26 {
+            return Ok(Value.Float(float.from_single(h.arg)));
+        }
+        if h.info == 27 {
+            return Ok(Value.Float(float.from_double(h.arg)));
+        }
+        if h.arg == 20 || h.arg == 21 {
+            return Ok(Value.Bool(h.arg == 21));
+        }
+        if h.arg == 22 {
+            return Ok(Value.Null);
+        }
+        if h.arg == 23 {
+            return Ok(Value.Undefined);
+        }
+        // `head` let through only 0–19 and 32–255 here
+        let Some(s) = SimpleValue.new(h.arg as u8) else {
+            panic("cbor: internal error: simple value {h.arg} slipped past the head");
+        };
+        Ok(Value.Simple(s))
+    }
+
+    /**
+     * Reads a byte or text string, definite or in chunks (RFC 8949 §3.2.3),
+     * whose head `h` is already read. Text is strict UTF-8, chunk by chunk.
+     */
+    fun read_string(mut self, h: Head): Result<Value, DecodeError> {
+        let text = h.major == 3;
+        if !h.indefinite() {
+            // the claim first: a 9-byte head can claim 2^64 bytes
+            if !self.fits(h.arg, 1) {
+                return Err(DecodeError.Truncated);
+            }
+            self.take_item()?;
+            let b = self.chunk(h.arg, 0)?;
+            if !text {
+                return Ok(Value.Bytes(b));
+            }
+            return match string_from_utf8(b) {
+                Ok(s) => Ok(Value.Text(s)),
+                Err(_) => Err(DecodeError.InvalidUtf8),
+            };
+        }
+        self.take_item()?;
+        let mut all: u8[] = [];
+        while true {
+            let c = self.head()?;
+            if c.is_break() {
+                break;
+            }
+            // §3.2.3: each chunk is a definite string of the same major type
+            if c.major != h.major || c.indefinite() {
+                return Err(DecodeError.Malformed(Malformation.BadChunk));
+            }
+            if !self.fits(c.arg, 1) {
+                return Err(DecodeError.Truncated);
+            }
+            let part = self.chunk(c.arg, all.len)?;
+            // §3.2.3: a code point can't span chunks, so each must be valid alone
+            if text && string_from_utf8(part).is_err() {
+                return Err(DecodeError.InvalidUtf8);
+            }
+            for x of part {
+                all.push(x);
+            }
+        }
+        if !text {
+            return Ok(Value.Bytes(all));
+        }
+        // valid chunks join into valid text, so this can't fail
+        match string_from_utf8(all) {
+            Ok(s) => Ok(Value.Text(s)),
+            Err(_) => Err(DecodeError.InvalidUtf8),
+        }
+    }
+
+    /**
+     * Copies the next `len` bytes, already checked to fit, after counting
+     * them against both string limits; `before` is how much of this string
+     * earlier chunks hold.
+     */
+    fun chunk(mut self, len: u64, before: i64): Result<u8[], DecodeError> {
+        // before <= max_string always holds, so neither subtraction goes negative
+        if len > (self.max_string - before) as u64 || len > self.string_bytes_left as u64 {
+            return Err(DecodeError.TooLarge);
+        }
+        let n = len as i64;
+        self.string_bytes_left -= n;
+        let mut out: u8[] = [];
+        for i in self.pos..self.pos + n {
+            out.push(self.bytes[i]);
+        }
+        self.pos += n;
+        Ok(out)
+    }
+}

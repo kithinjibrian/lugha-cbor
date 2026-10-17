@@ -67,7 +67,14 @@ fun infinities_and_nan_in_their_preferred_form() {
 
 @test
 fun nan_payloads_survive_decode_and_encode() {
-    for s of ["f97c01", "f9fe01", "fa7f800001", "faffc00123", "fb7ff0000000000001", "fbfff8000000000123"] {
+    for s of [
+        "f97c01",
+        "f9fe01",
+        "fa7f800001",
+        "faffc00123",
+        "fb7ff0000000000001",
+        "fbfff8000000000123",
+    ] {
         assert_eq(encode(decode(hex(s), Limits.default()).unwrap()), hex(s));
     }
 }
@@ -86,12 +93,18 @@ fun simple_values() {
 
 @test
 fun tags() {
-    encodes(Value.Tag(0, t("2013-03-21T20:04:00Z")), "c074323031332d30332d32315432303a30343a30305a");
+    encodes(
+        Value.Tag(0, t("2013-03-21T20:04:00Z")),
+        "c074323031332d30332d32315432303a30343a30305a",
+    );
     encodes(Value.Tag(1, u(1363896240)), "c11a514b67b0");
     encodes(Value.Tag(1, Value.Float(1363896240.5)), "c1fb41d452d9ec200000");
     encodes(Value.Tag(23, Value.Bytes(hex("01020304"))), "d74401020304");
     encodes(Value.Tag(24, Value.Bytes(hex("6449455446"))), "d818456449455446");
-    encodes(Value.Tag(32, t("http://www.example.com")), "d82076687474703a2f2f7777772e6578616d706c652e636f6d");
+    encodes(
+        Value.Tag(32, t("http://www.example.com")),
+        "d82076687474703a2f2f7777772e6578616d706c652e636f6d",
+    );
     encodes(Value.Tag(u64.MAX, Value.Null), "dbfffffffffffffffff6");
 }
 
@@ -124,10 +137,19 @@ fun arrays_and_maps() {
     encodes(Value.Array(xs), "98190102030405060708090a0b0c0d0e0f101112131415161718181819");
     encodes(Value.Map([]), "a0");
     encodes(Value.Map([kv(u(1), u(2)), kv(u(3), u(4))]), "a201020304");
-    encodes(Value.Map([kv(t("a"), u(1)), kv(t("b"), Value.Array([u(2), u(3)]))]), "a26161016162820203");
+    encodes(
+        Value.Map([kv(t("a"), u(1)), kv(t("b"), Value.Array([u(2), u(3)]))]),
+        "a26161016162820203",
+    );
     encodes(Value.Array([t("a"), Value.Map([kv(t("b"), t("c"))])]), "826161a161626163");
     encodes(
-        Value.Map([kv(t("a"), t("A")), kv(t("b"), t("B")), kv(t("c"), t("C")), kv(t("d"), t("D")), kv(t("e"), t("E"))]),
+        Value.Map([
+            kv(t("a"), t("A")),
+            kv(t("b"), t("B")),
+            kv(t("c"), t("C")),
+            kv(t("d"), t("D")),
+            kv(t("e"), t("E")),
+        ]),
         "a56161614161626142616361436164614461656145",
     );
 }
@@ -135,5 +157,8 @@ fun arrays_and_maps() {
 @test
 fun map_order_is_kept() {
     encodes(Value.Map([kv(u(3), u(4)), kv(u(1), u(2))]), "a203040102");
-    encodes(Value.Map([kv(t("Fun"), Value.Bool(true)), kv(t("Amt"), Value.int(-2))]), "a26346756ef563416d7421");
+    encodes(
+        Value.Map([kv(t("Fun"), Value.Bool(true)), kv(t("Amt"), Value.int(-2))]),
+        "a26346756ef563416d7421",
+    );
 }

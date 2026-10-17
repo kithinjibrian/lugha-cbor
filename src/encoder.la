@@ -1,0 +1,120 @@
+/**
+ * `Value` to bytes in preferred serialisation (RFC 8949 §4.1): shortest
+ * heads, shortest exact floats, definite lengths, map entries in the order
+ * given. Never recurses, whatever the value's depth. Not responsible for
+ * deterministic encoding (§4.2) or indefinite lengths (DECISION-001).
+ *
+ * Depends on: value, float
+ * Used by: keys, lib
+ */
+
+import value { Value };
+import float;
+
+/** The bytes written so far. */
+struct Writer {
+    out: u8[],
+}
+
+impl Writer {
+    /** Appends `n` bytes of `arg`, most significant first. */
+    fun big_endian(mut self, arg: u64, n: u64) {
+        let mut i = n;
+        while i > 0 {
+            i -= 1;
+            self.out.push((arg >> i * 8) as u8);
+        }
+    }
+
+    /** Appends a head with `major` and `arg` in its shortest form (§4.1). */
+    fun head(mut self, major: u8, arg: u64) {
+        let m = major << 5;
+        if arg < 24 {
+            self.out.push(m | arg as u8);
+        } else if arg <= 0xff {
+            self.out.push(m | 24);
+            self.big_endian(arg, 1);
+        } else if arg <= 0xffff {
+            self.out.push(m | 25);
+            self.big_endian(arg, 2);
+        } else if arg <= 0xffff_ffff {
+            self.out.push(m | 26);
+            self.big_endian(arg, 4);
+        } else {
+            self.out.push(m | 27);
+            self.big_endian(arg, 8);
+        }
+    }
+
+    /** Appends every byte of `bytes`. */
+    fun all(mut self, bytes: u8[]) {
+        for b of bytes {
+            self.out.push(b);
+        }
+    }
+}
+
+/**
+ * Encodes `item` in preferred serialisation: the shortest head for every
+ * integer, length and tag; the shortest of half, single and double that
+ * keeps each float exactly, NaN payloads included; definite lengths; map
+ * entries in the order given.
+ *
+ * @param item any value; every one can be encoded
+ * @returns the CBOR bytes
+ *
+ * Example:
+ *     encode(Value.Array([Value.int(1), Value.Text("a")]))
+ */
+public fun encode(item: Value): u8[] {
+    let mut w = Writer { out: [] };
+    // a stack of values still to write, the next on top: containers push
+    // their children in reverse, so no call ever recurses
+    let mut work: Value[] = [item];
+    while let Some(v) = work.pop() {
+        match v {
+            Unsigned(n) => w.head(0, n),
+            Negative(n) => w.head(1, n),
+            Bytes(b) => {
+                w.head(2, b.len as u64);
+                w.all(b);
+            }
+            Text(s) => {
+                w.head(3, s.len as u64);
+                w.all(s.to_bytes());
+            }
+            Array(xs) => {
+                w.head(4, xs.len as u64);
+                let mut i = xs.len;
+                while i > 0 {
+                    i -= 1;
+                    work.push(xs[i]);
+                }
+            }
+            Map(es) => {
+                w.head(5, es.len as u64);
+                let mut i = es.len;
+                while i > 0 {
+                    i -= 1;
+                    work.push(es[i].value);
+                    work.push(es[i].key);
+                }
+            }
+            Tag(n, content) => {
+                w.head(6, n);
+                work.push(content);
+            }
+            Bool(b) => w.head(7, if b { 21 } else { 20 }),
+            Null => w.head(7, 22),
+            Undefined => w.head(7, 23),
+            Simple(s) => w.head(7, s.number() as u64),
+            Float(x) => {
+                let (info, bits) = float.shortest(x);
+                w.out.push(0xe0 | info);
+                // 25, 26, 27: 2, 4 or 8 bytes
+                w.big_endian(bits, 1 << info as u64 - 24);
+            }
+        }
+    }
+    w.out
+}
