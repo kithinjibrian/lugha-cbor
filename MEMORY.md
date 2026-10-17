@@ -62,6 +62,7 @@ Read this at the start of every session before writing any code.
 ### Fully Working
 - `lughac init --lib` skeleton; context system (session 1).
 - PRP-001 (session 3): `Value`, `decode` with `Limits`, `encode`, the reading helpers; 86 tests.
+- Released v0.1.0 (session 5): github.com/kithinjibrian/lugha-cbor, tag `v0.1.0`. Releases follow lugha-gtk: a `lugha-cbor X.Y.Z: …` commit bumping `lugha.toml` and the README, plus a lightweight tag.
 
 
 ---

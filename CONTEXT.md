@@ -158,16 +158,43 @@ CONTEXT.md — this entry
 
 ---
 
-## SESSION 5 — 2026-10-17 — Release v0.1.0 — open
+## SESSION 5 — 2026-10-17 — Release v0.1.0 — closed
 
 Branch: main
 
 ### WHAT WAS DONE
 
-- In progress.
+Released 0.1.0 the way lugha-gtk releases (checked in `../lugha-gtk`, read only): one commit titled `lugha-cbor 0.1.0: …` that brings `lugha.toml`'s version (already 0.1.0) and the README's "What's covered (0.1.0)" up to date, then a lightweight tag `v0.1.0` on that commit, both pushed. lugha-gtk makes no GitHub Release pages, so neither did this.
+
+- README rewritten (usage, requirements, untrusted input, what's covered); its code sample compiled and ran before committing.
+- CHANGELOG: Unreleased became `[0.1.0] — 2026-10-17`.
+- Before tagging: `fmt --check` 0, `lughac test test/` 0 (86 tests), example build 0.
+- Checked the release as a dependency: a scratch program listing `cbor = { git = "https://github.com/kithinjibrian/lugha-cbor", version = "0.1" }` resolved `v0.1.0` (commit eaad158) and ran.
+
+### FILES CREATED OR MODIFIED
+
+```
+README.md, CHANGELOG.md, CONTEXT.md, MEMORY.md
+```
+
+### TESTS WRITTEN
+
+- None (no code changed).
+
+### DECISIONS MADE
+
+- Releases follow lugha-gtk: release commit `lugha-cbor X.Y.Z: summary` + lightweight tag `vX.Y.Z`, no GitHub Release page.
+
+### PENDING DECISIONS OPENED
+
+- None.
+
+### STILL OPEN AT CLOSE
+
+- Nothing.
 
 ---
 
 ## NEXT SESSION START POINT
 
-Open session 4's successor (session 5) first. Remote: `origin` = github.com/kithinjibrian/lugha-cbor; push after each session's handoff. Possible next steps, for the owner to choose: tag v0.1.0 (ask first) so Rapidkoi can depend on it through git, or a new PRP.
+Open session 6 first. v0.1.0 is released (tag `v0.1.0`, commit eaad158); Rapidkoi can list `cbor = { git = "https://github.com/kithinjibrian/lugha-cbor", version = "0.1" }`. Next: whatever the owner chooses: a new PRP (DECISION-001 if a user needs streaming or indefinite-length encoding). For a release: bump `lugha.toml` and the README's "What's covered", commit `lugha-cbor X.Y.Z: …`, tag `vX.Y.Z`, push both (ask first).
