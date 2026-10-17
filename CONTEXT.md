@@ -40,6 +40,16 @@ test/, docs/source/…, docs/specs …, reports/ — empty folders
 
 ---
 
+## SESSION 2 — 2026-10-17 — PRP-001: decode and encode — open
+
+Branch: prp-001-decode-encode
+
+### WHAT WAS DONE
+
+- In progress.
+
+---
+
 ## NEXT SESSION START POINT
 
 Open session 2 first. Write PRP-001 (decoder and encoder) from the owner's brief, ask only about real gaps, and build it after approval.
