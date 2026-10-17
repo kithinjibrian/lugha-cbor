@@ -1,0 +1,6 @@
+// An example using cbor. Run it with `lughac run examples/hello.la`.
+import cbor;
+
+fun main() {
+    println(cbor.greet("world"));
+}

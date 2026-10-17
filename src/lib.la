@@ -1,0 +1,7 @@
+/**
+ * cbor: a Lugha library. This is its entry, `import cbor;`;
+ * its other modules live beside it in `src/`.
+ */
+
+// Returns a greeting from this library.
+public fun greet(who: string): string = "Hello, {who}, from cbor!";

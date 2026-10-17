@@ -1,0 +1,22 @@
+# .llmignore
+# Keep in sync with PROTECTED FILES in CLAUDE.md and .claude/settings.json.
+
+.env
+.env.*
+
+# Lockfile: written only by lughac
+lugha.lock
+
+# License: changed only by the human
+LICENSE
+
+# Built executables (see .gitignore)
+/hello
+/examples/hello
+
+# Sibling repositories: read for reference, never write
+../lugha/
+../rapidkoi/
+../kivuli/
+../lugha-gtk/
+../lugha-wasmtime/
