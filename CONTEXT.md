@@ -125,16 +125,39 @@ PRPs/prp-001-decode_encode.md, DECISIONS.md, MEMORY.md (decision 5, state), CLAU
 
 ---
 
-## SESSION 4 — 2026-10-17 — Create the GitHub repository — open
+## SESSION 4 — 2026-10-17 — Create the GitHub repository — closed
 
 Branch: main
 
 ### WHAT WAS DONE
 
-- In progress.
+On the owner's go: created the public repository https://github.com/kithinjibrian/lugha-cbor (public like lugha, kivuli, lugha-gtk and lugha-wasmtime), added it as `origin` (ssh), and pushed `main`. Before pushing, checked the real exit statuses: `fmt --check` 0, `lughac test test/` 0 (86 tests), the example build 0. Nothing sensitive is tracked.
+
+### FILES CREATED OR MODIFIED
+
+```
+CONTEXT.md — this entry
+```
+
+### TESTS WRITTEN
+
+- None (no code changed).
+
+### DECISIONS MADE
+
+- Public repository, description "CBOR (RFC 8949) for Lugha: a decoder safe on hostile input, and a preferred-serialisation encoder".
+
+### PENDING DECISIONS OPENED
+
+- None.
+
+### STILL OPEN AT CLOSE
+
+- No tag yet; v0.1.0 needs the owner's go. `lugha.toml` already says 0.1.0. A git dependency (`{ git = …, version = "0.1" }`) needs a `v0.1.0` tag.
+- The local branch `prp-001-decode-encode` was not pushed (it is merged into main).
 
 ---
 
 ## NEXT SESSION START POINT
 
-Open session 4 first. PRP-001 is merged and complete. Possible next steps, for the owner to choose: create the GitHub repository and push (ask first), tag v0.1.0, or a new PRP (e.g. DECISION-001's streaming/indefinite encoding, if a user needs it). Rapidkoi's step 1 can use `cbor` now.
+Open session 4's successor (session 5) first. Remote: `origin` = github.com/kithinjibrian/lugha-cbor; push after each session's handoff. Possible next steps, for the owner to choose: tag v0.1.0 (ask first) so Rapidkoi can depend on it through git, or a new PRP.
