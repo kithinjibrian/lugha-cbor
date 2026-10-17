@@ -82,16 +82,49 @@ CONTEXT.md                      — this entry
 
 ---
 
-## SESSION 3 — 2026-10-17 — PRP-001: resolve DECISION-002 and build — open
+## SESSION 3 — 2026-10-17 — PRP-001: resolve DECISION-002 and build — closed
 
-Branch: prp-001-decode-encode
+Branch: prp-001-decode-encode (merged into main, fast-forward)
 
 ### WHAT WAS DONE
 
-- In progress.
+lughac m108 (Lugha PR #65) added float bit casts. A probe confirmed a signalling NaN's bits survive. Resolved DECISION-002, updated PRP-001, got the owner's approval, and built it test-first: the tests were committed red (6ff8e00), then the code.
+
+Deviations from the PRP, each recorded in it:
+- `head.la` + `strings.la` became one `reader.la`: an `impl` must sit in its type's file and only externs take `mut` parameters.
+- `decode.la`/`encode.la` are named `decoder.la`/`encoder.la`: a glob re-export would make `decode` both a module and a function in `lib` (E0314).
+- Map claims are checked as count ≤ bytes left (not left / 2), so `a1 ff` reads its break and is `Malformed(UnexpectedBreak)`, as RFC 8949 Appendix F files it.
+- The FNV-collision key test was dropped: this package doesn't hash, so it would only test lughac's `Map`. A reversed-order test took its place.
+
+### FILES CREATED OR MODIFIED
+
+```
+src/lib.la (entry, re-exports only), value.la, limits.la, error.la, reader.la, decoder.la, keys.la, float.la, encoder.la
+test/support.la + decode_appendix_a, decode_appendix_f, decode_limits, decode_hostile, keys, float, value, encode, round_trip
+examples/round_trip.la (replaces hello.la); .gitignore, .llmignore
+PRPs/prp-001-decode_encode.md, DECISIONS.md, MEMORY.md (decision 5, state), CLAUDE.md (architecture, layout), CHANGELOG.md
+```
+
+### TESTS WRITTEN
+
+- 86 tests, all passing (`lughac test test/`, exit 0): every Appendix A example decoded and, where preferred, encoded; every Appendix F input with its error; each limit at its edge; huge claims, invalid UTF-8 (including a code point split across chunks), duplicate keys in other encodings, trailing bytes; 10,000-key maps (the slowest takes 361 ms under `--timeout 2`); 100,000 nested arrays decoded and re-encoded with no stack (114 ms); every half round-trips; NaN payloads kept.
+- `lughac fmt --check src examples test` clean; `examples/round_trip.la` builds and runs. Largest file 237 lines.
+
+### DECISIONS MADE
+
+- DECISION-002 resolved: float widths convert on integer bits (MEMORY.md 5).
+
+### PENDING DECISIONS OPENED
+
+- None. DECISION-001 (streaming, indefinite-length encoding) stays deferred.
+
+### STILL OPEN AT CLOSE
+
+- No remote: nothing pushed or tagged (ask the owner first).
+- Rapidkoi can now depend on `cbor` (in `../rapidkoi`, under its own rules).
 
 ---
 
 ## NEXT SESSION START POINT
 
-Open session 3 first, on `prp-001-decode-encode`. Check whether the installed lughac documents float bit casts (`lughac spec | grep -i bits`). If yes: resolve DECISION-002, update PRP-001's "Lugha spec sections relied on" with their real names, get the owner's approval of PRP-001 if not yet given, then build it test-first. If no: PRP-001 stays blocked; ask the owner what to do next.
+Open session 4 first. PRP-001 is merged and complete. Possible next steps, for the owner to choose: create the GitHub repository and push (ask first), tag v0.1.0, or a new PRP (e.g. DECISION-001's streaming/indefinite encoding, if a user needs it). Rapidkoi's step 1 can use `cbor` now.
