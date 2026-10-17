@@ -47,13 +47,23 @@ Read this at the start of every session before writing any code.
 
 ---
 
+### 5. Float widths converted on bits
+
+**Decision:** Half, single and double convert to and from `f64` by integer bit manipulation, with `f64.to_bits`/`f64.from_bits` (lughac m108) at the edges (DECISION-002).
+
+**Why:** NaN payloads must survive; a hardware `f32`↔`f64` conversion quiets signalling NaNs.
+
+**Rules out:** `as f32`/`as f64` in float encoding or decoding; arithmetic float decoding.
+
+---
+
 ## CURRENT PROJECT STATE
 
 ### Fully Working
 - `lughac init --lib` skeleton; context system (session 1).
 
-### Written, blocked
-- PRP-001: the decoder and encoder (`PRPs/prp-001-decode_encode.md`), waiting on lughac float bit casts (DECISION-002).
+### In progress
+- PRP-001: the decoder and encoder (`PRPs/prp-001-decode_encode.md`). DECISION-002 resolved by lughac m108.
 
 ---
 

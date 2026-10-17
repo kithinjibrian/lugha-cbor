@@ -11,21 +11,7 @@ Rules:
 
 ## OPEN — Requires human input before implementation
 
-### DECISION-002 — Float bit casts (lughac)
-
-**Status:** open, blocks PRP-001
-**Raised:** 2026-10-17 — Session 2
-**Blocks:** all of PRP-001 (the owner's choice, session 2)
-
-**Question:** How does the package turn CBOR's half, single and double float bits into an `f64`, and back?
-
-**Finding:** lughac 0.1.0 (spec v17) has no way to reinterpret bits. `as` converts numbers by value (spec §4, Casts), and neither the spec nor `../lugha/src` has `to_bits`/`from_bits` or anything like them. Exact arithmetic could decode and encode every float value, including infinities and -0.0, but not NaN payloads: every NaN would come out as the same NaN and encode as `f97e00`.
-
-**Owner's decision (session 2):** don't work around it. PRP-001 waits until lughac has float bit casts, so NaN payloads are kept.
-
-**Needed in `../lugha`** (fixed there under that repo's rules, never from here): reinterpreting casts both ways, for example `f64.from_bits(u64): f64`, `x.to_bits(): u64` on `f64`, and the same for `f32` with `u32`. Half precision stays in this package (it has no Lugha type).
-
-**Resolves when:** a lughac release documents float bit casts in `lughac spec`. PRP-001 is then updated to name them and built.
+(none)
 
 ---
 
@@ -44,6 +30,24 @@ Rules:
 ---
 
 ## RESOLVED
+
+### DECISION-002 — Float bit casts (lughac)
+
+**Status:** resolved (session 3)
+**Raised:** 2026-10-17 — Session 2
+**Blocks:** all of PRP-001 (the owner's choice, session 2)
+
+**Question:** How does the package turn CBOR's half, single and double float bits into an `f64`, and back?
+
+**Finding:** lughac 0.1.0 (spec v17) has no way to reinterpret bits. `as` converts numbers by value (spec §4, Casts), and neither the spec nor `../lugha/src` has `to_bits`/`from_bits` or anything like them. Exact arithmetic could decode and encode every float value, including infinities and -0.0, but not NaN payloads: every NaN would come out as the same NaN and encode as `f97e00`.
+
+**Owner's decision (session 2):** don't work around it. PRP-001 waits until lughac has float bit casts, so NaN payloads are kept.
+
+**Needed in `../lugha`** (fixed there under that repo's rules, never from here): reinterpreting casts both ways, for example `f64.from_bits(u64): f64`, `x.to_bits(): u64` on `f64`, and the same for `f32` with `u32`. Half precision stays in this package (it has no Lugha type).
+
+**Outcome (session 3):** lughac milestone 108 (Lugha PR #65, tag m108) adds `x.to_bits()` (`f64` → `u64`, `f32` → `u32`), `f64.from_bits(b)` and `f32.from_bits(b)`, exactly the IEEE 754 bits, NaN payloads and -0.0 kept (spec §4, "A float's bits"); a probe confirmed a signalling NaN's bits survive. `src/float.la` converts between half, single and double on the integer bits and calls only `f64.to_bits`/`f64.from_bits`: never `as f32`/`as f64`, which would quiet a signalling NaN.
+
+---
 
 ### DECISION-003 — Duplicate map keys detected by sorting, not hashing
 

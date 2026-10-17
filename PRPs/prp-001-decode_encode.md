@@ -1,6 +1,6 @@
 # PRP-001 — Decode and encode CBOR
 
-**Status:** written, waiting for approval. **Blocked** by DECISION-002 (float bit casts in lughac) until a lughac release has them.
+**Status:** written, waiting for approval. DECISION-002 resolved by lughac m108 (session 3).
 **Branch:** `prp-001-decode-encode`
 **Source:** the owner's brief, session 2 (2026-10-17); answers to the two gaps are DECISION-002 and DECISION-003.
 
@@ -41,7 +41,7 @@ src/head.la       reading one head (initial byte + argument) with bounds checks
 src/decode.la     decode(): the iterative decoder (an explicit frame stack)
 src/strings.la    definite and indefinite byte/text strings, strict UTF-8
 src/keys.la       duplicate-key detection (DECISION-003)
-src/float.la      half/single/double <-> f64 (needs DECISION-002's bit casts)
+src/float.la      half/single/double <-> f64, on the integer bits (DECISION-002)
 src/encode.la     encode(): preferred serialisation, iterative
 test/…            one file per area, mirroring src/ (see TESTS TO WRITE)
 examples/round_trip.la   replaces examples/hello.la; .gitignore updated
@@ -58,8 +58,8 @@ examples/round_trip.la   replaces examples/hello.la; .gitignore updated
   - §5 `string_from_utf8` (strict: rejects overlong forms, surrogates, > U+10FFFF, truncated sequences).
   - §6 Package entry `src/lib.la` (`import cbor;`) and glob re-exports `public import value { * };`.
   - §9 `lughac test` with `@test`, `assert`, `assert_eq`, `--timeout`; programs in `test/` and `examples/` see the package's items.
-  - **Missing:** float bit casts. See DECISION-002.
-- **Open decisions that must be resolved first:** DECISION-002 (open, blocks the whole PRP by the owner's choice). DECISION-001 (deferred) stays out of scope. DECISION-003 is resolved and followed.
+  - §4 "A float's bits" (v17, milestone 108): `x.to_bits()` on `f64` gives a `u64`, and `f64.from_bits(b)` reads it back, NaN payloads and -0.0 kept. Only these two are used. Half and single are widened and narrowed on the integer bits, never with `as`, which would quiet a signalling NaN.
+- **Open decisions that must be resolved first:** none. DECISION-002 is resolved (lughac m108) and DECISION-003 is resolved; both are followed. DECISION-001 (deferred) stays out of scope.
 
 ## IMPLEMENTATION REQUIREMENTS
 
@@ -130,7 +130,7 @@ public struct Limits { max_depth: i64, max_items: i64, max_bytes: i64, max_strin
 - Indefinite arrays and maps decode. A break where an item is expected in a definite container, a tag's content, a map's value position, or at the top level is `Malformed(UnexpectedBreak)`.
 - Text is strict UTF-8, checked with `string_from_utf8` per chunk (RFC 8949 §3.2.3: a code point can't span chunks). Invalid text is `Err(InvalidUtf8)`, never replaced.
 - Duplicate keys in one map are `Err(DuplicateKey)`, found per DECISION-003 (`src/keys.la`). When a map closes, each key is encoded in preferred serialisation (`encode`, so `0x01` and `0x18 0x01` are the same key, and so are a definite and an indefinite `"a"`). The keys are merge-sorted by those bytes with `sort_by`, and neighbours compared.
-- Floats: half (`f9`), single (`fa`) and double (`fb`) decode to an `f64` holding the same value, NaN payloads included (DECISION-002's bit casts. Half precision is widened in this package, exactly).
+- Floats: half (`f9`), single (`fa`) and double (`fb`) decode to an `f64` holding the same value, NaN payloads included, signalling NaNs too. Every width is converted on the integer bits (DECISION-002).
 - Tags decode as `Tag(number, content)` for every number, with no checks on the content. Bignums (tags 2 and 3) stay `Tag(2, Bytes(…))`.
 
 **`encode(value: Value): u8[]`** (`src/encode.la`), preferred serialisation (§4.1):
@@ -154,7 +154,7 @@ public struct Limits { max_depth: i64, max_items: i64, max_bytes: i64, max_strin
 - **No C, no `extern`, no `[link]`, no package dependencies, no `std` modules that touch the OS** (CLAUDE.md SECURITY RULE).
 - **No recursion anywhere in the package**: decode, encode and duplicate detection all use explicit stacks.
 - **No hash-based duplicate detection** (`Map`, `Set` or an unkeyed hash): it can be attacked (DECISION-003).
-- **No arithmetic float workaround** for DECISION-002: the owner chose to wait for bit casts.
+- **No `as f32` / `as f64` in float conversion, and no arithmetic float decoding** (DECISION-002): bits only.
 - **No Rapidkoi-specific code or limits.** Rapidkoi sets its own `Limits`.
 
 ## ERROR HANDLING REQUIREMENTS
@@ -238,7 +238,6 @@ Test first, each file under 400 lines, in `test/` mirroring `src/`:
 - State the codebase should be in: the `lughac init` placeholders and the context system, unchanged. The PRP branch is deleted unmerged.
 
 ## ACCEPTANCE CRITERIA
-- [ ] DECISION-002 resolved: lughac documents float bit casts, and this PRP names them before building.
 - [ ] Every Appendix A example decodes to its value, and every preferred one encodes to its exact bytes.
 - [ ] Every Appendix F example gives its expected `Err`.
 - [ ] Each limit is enforced, exactly at its edge.
