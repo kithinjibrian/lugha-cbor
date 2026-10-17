@@ -125,6 +125,16 @@ PRPs/prp-001-decode_encode.md, DECISIONS.md, MEMORY.md (decision 5, state), CLAU
 
 ---
 
+## SESSION 4 — 2026-10-17 — Create the GitHub repository — open
+
+Branch: main
+
+### WHAT WAS DONE
+
+- In progress.
+
+---
+
 ## NEXT SESSION START POINT
 
 Open session 4 first. PRP-001 is merged and complete. Possible next steps, for the owner to choose: create the GitHub repository and push (ask first), tag v0.1.0, or a new PRP (e.g. DECISION-001's streaming/indefinite encoding, if a user needs it). Rapidkoi's step 1 can use `cbor` now.
